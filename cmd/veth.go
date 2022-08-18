@@ -36,7 +36,7 @@ type RPFilter struct {
 
 type PluginConf struct {
 	types.NetConf
-	Routes []*types.Route
+	Routes []*types.Route `json:"routes,omitempty"`
 	// RpFilter
 	RPFilter *RPFilter `json:"rp_filter,omitempty"`
 	Skipped  bool      `json:"skip,omitempty"`
@@ -54,7 +54,6 @@ func main() {
 }
 
 func cmdAdd(args *skel.CmdArgs) error {
-
 	conf, err := parseConfig(args.StdinData)
 	if err != nil {
 		return err
@@ -123,11 +122,11 @@ func cmdAdd(args *skel.CmdArgs) error {
 	if err = sysctlRPFilter(netns, conf.RPFilter); err != nil {
 		return err
 	}
-	return nil
+	return types.PrintResult(conf.PrevResult, conf.CNIVersion)
 }
 
 func cmdDel(args *skel.CmdArgs) error {
-	// TODO
+	// nothing to do
 	return nil
 }
 
@@ -141,7 +140,7 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	conf := PluginConf{}
 
 	if err := json.Unmarshal(stdin, &conf); err != nil {
-		return nil, fmt.Errorf("failed to parse network configuration: %v", err)
+		return nil, fmt.Errorf("[veth] failed to parse network configuration: %v", err)
 	}
 
 	// Parse previous result. This will parse, validate, and place the
@@ -149,14 +148,14 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	// or inspect the PrevResult you will need to convert it to a concrete
 	// versioned Result struct.
 	if err := version.ParsePrevResult(&conf.NetConf); err != nil {
-		return nil, fmt.Errorf("could not parse prevResult: %v", err)
+		return nil, fmt.Errorf("[veth] could not parse prevResult: %v", err)
 	}
 	// End previous result parsing
 
 	// some validation
 	for idx, route := range conf.Routes {
 		if route.Dst.IP == nil {
-			return nil, fmt.Errorf("routes[%v]: des must be specified", idx)
+			return nil, fmt.Errorf("[veth] routes[%v]: des must be specified", idx)
 		}
 	}
 
@@ -195,7 +194,7 @@ func setupVeth(netns ns.NetNS, containerID string, pr *current.Result) (*current
 	err := netns.Do(func(hostNS ns.NetNS) error {
 		hostVeth, contVeth0, err := ip.SetupVethWithName(defaultConVeth, hostVethName, defaultMtu, "", hostNS)
 		if err != nil {
-			return err
+			return fmt.Errorf("[veth] failed to set veth peer: %v", err)
 		}
 		hostInterface.Name = hostVeth.Name
 		hostInterface.Mac = hostVeth.HardwareAddr.String()
@@ -206,11 +205,11 @@ func setupVeth(netns ns.NetNS, containerID string, pr *current.Result) (*current
 		pr.Interfaces = append(pr.Interfaces, hostInterface, containerInterface)
 
 		if err = setLinkup(contVeth0.Name); err != nil {
-			return err
+			return fmt.Errorf("[veth] failed to set %s up: %v", contVeth0.Name, err)
 		}
 		return nil
 	})
-	if err = setLinkup(hostInterface.Name); err != nil {
+	if err != nil {
 		return nil, nil, err
 	}
 
@@ -237,7 +236,7 @@ func setupNeighborhood(netns ns.NetNS, hostInterface, conInterface *current.Inte
 }
 
 // setupRoutes setup routes for pod and host
-// equivalent to: `ip route add $route
+// equivalent to: `ip route add $route`
 func setupRoutes(netns ns.NetNS, hostInterface, conInterface *current.Interface, hostIPs, conIPs []string, routes []*types.Route) error {
 	var err error
 	// set routes for host

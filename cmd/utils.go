@@ -31,7 +31,7 @@ var DefaultInterfacesToExclude = []string{
 func getHostIps() ([]string, error) {
 	netIfaces, err := net.Interfaces()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("[veth] getHostIps: %v ", err)
 	}
 
 	var ips []string
@@ -76,7 +76,7 @@ func getConIps(netns ns.NetNS) ([]string, error) {
 		ipv4, ipv6 := false, false
 		ifaces, err := net.Interfaces()
 		if err != nil {
-			return fmt.Errorf("[veth]failed to list interfaces inside pod")
+			return fmt.Errorf("[veth] failed to list interfaces inside pod")
 		}
 		for _, iface := range ifaces {
 			if iface.Name == defaultInterfaceName {
@@ -100,7 +100,7 @@ func getConIps(netns ns.NetNS) ([]string, error) {
 		return nil, err
 	}
 	if len(ips) == 0 {
-		return nil, fmt.Errorf("[veth]no one vaild ip on the pod")
+		return nil, fmt.Errorf("[veth] no one vaild ip on the pod")
 	}
 	return ips, nil
 }
