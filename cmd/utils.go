@@ -182,8 +182,8 @@ func setRPFilter() error {
 		if err != nil {
 			continue
 		}
-		if value == string(rune(RPFilterStrict)) {
-			sysctl.Sysctl(name, string(rune(RPFilterLoose)))
+		if value == "1" {
+			sysctl.Sysctl(name, "2")
 		}
 	}
 	return nil
