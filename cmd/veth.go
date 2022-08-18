@@ -28,20 +28,17 @@ const (
 )
 
 type RPFilter struct {
-	//
-	Enable *bool `json:"enable",omitempty`
+	// setup host rp_filter
+	Enable *bool `json:"enable,omitempty"`
 	// the value of rp_filter, must be 0/1/2
-	Value *RPFilterValue `json:"value",omitempty`
+	Value *RPFilterValue `json:"value,omitempty"`
 }
 
 type PluginConf struct {
 	types.NetConf
-	Routes        []*types.Route
-	RuntimeConfig struct {
-		extras map[string]interface{} `json:extras",omitempty"`
-	} `json:"runtimeConfig,omitempty"`
+	Routes []*types.Route
 	// RpFilter
-	RPFilter *RPFilter `json:"rp_filter",omitempty`
+	RPFilter *RPFilter `json:"rp_filter,omitempty"`
 	Skipped  bool      `json:"skip,omitempty"`
 }
 
@@ -282,29 +279,28 @@ func setupRoutes(netns ns.NetNS, hostInterface, conInterface *current.Interface,
 		}
 
 		for _, route := range routes {
-			via := &netlink.Via{}
+			gw := net.IP{}
 			if route.Dst.IP.To4() != nil {
 				if _, ok := ipMap["ipv4"]; ok {
-					via.Addr = ipMap["ipv4"]
-					via.AddrFamily = netlink.FAMILY_V4
+					gw = ipMap["ipv4"]
 				}
 			} else {
 				if _, ok := ipMap["ipv6"]; ok {
-					via.Addr = ipMap["ipv6"]
-					via.AddrFamily = netlink.FAMILY_V6
+					gw = ipMap["ipv6"]
 				}
 			}
-			if via.Addr == nil {
-				return fmt.Errorf("add route: %v failed, can't found nexthop on host", route.Dst.String())
+			if len(gw) == 0 {
+				return fmt.Errorf("[veth]add route: %v failed: can't found next hop", route.Dst.String())
 			}
 			if err = netlink.RouteAdd(&netlink.Route{
 				LinkIndex: link.Attrs().Index,
 				Dst:       &route.Dst,
-				Via:       via,
+				Gw:        gw,
 			}); err != nil {
-				return fmt.Errorf("add route: %v failed: %v ", route.Dst.String(), err)
+				return fmt.Errorf("[veth]add route: %v failed: %v ", route.Dst.String(), err)
 			}
 		}
+
 		return nil
 	})
 	return err

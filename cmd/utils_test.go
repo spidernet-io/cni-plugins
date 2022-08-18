@@ -33,7 +33,7 @@ func Test_filterIPs(t *testing.T) {
 			got := []string{}
 			for _, ip := range tt.ips {
 				netIP := net.ParseIP(ip)
-				ipv4, ipv6, got = filterIPs(netIP, ipv4, ipv6, got)
+				ipv4, ipv6, got = veth_plugin.filterIPs(netIP, ipv4, ipv6, got)
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("filterIPs() got = %v, want %v", got, tt.want)

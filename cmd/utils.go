@@ -64,7 +64,7 @@ func getHostIps() ([]string, error) {
 	}
 
 	if len(ips) == 0 {
-		return nil, fmt.Errorf("no one vaild ip on the node")
+		return nil, fmt.Errorf("[veth]no one vaild ip on the node")
 	}
 	return ips, nil
 }
@@ -76,7 +76,7 @@ func getConIps(netns ns.NetNS) ([]string, error) {
 		ipv4, ipv6 := false, false
 		ifaces, err := net.Interfaces()
 		if err != nil {
-			return fmt.Errorf("failed to list interfaces inside pod")
+			return fmt.Errorf("[veth]failed to list interfaces inside pod")
 		}
 		for _, iface := range ifaces {
 			if iface.Name == defaultInterfaceName {
@@ -100,7 +100,7 @@ func getConIps(netns ns.NetNS) ([]string, error) {
 		return nil, err
 	}
 	if len(ips) == 0 {
-		return nil, fmt.Errorf("no one vaild ip on the pod")
+		return nil, fmt.Errorf("[veth]no one vaild ip on the pod")
 	}
 	return ips, nil
 }
@@ -174,7 +174,7 @@ func setLinkup(iface string) error {
 func setRPFilter() error {
 	dirs, err := os.ReadDir(sysctlConfPath)
 	if err != nil {
-		return fmt.Errorf("failed to set rp_filter: %v", err)
+		return fmt.Errorf("[veth]failed to set rp_filter: %v", err)
 	}
 	for _, dir := range dirs {
 		name := fmt.Sprintf("/net/ipv4/conf/%s/rp_filter", dir.Name())
