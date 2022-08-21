@@ -1,0 +1,57 @@
+name: Binary build
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+  push:
+    branch:
+      tags:
+      - main
+
+permissions: write-all
+
+
+jobs:
+  build-bin:
+    strategy:
+      matrix:
+        go_arch: [amd64, arm64]
+        go_version: [1.19.x]
+
+    name: Binary Build ${{ matrix.go_arch }}
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: ${{ matrix.go_version }}
+
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Build
+      run:  make build ARCH=${{ matrix.go_arch }}
+
+    - name: Tar Binary Files
+      if: ${{ inputs.ref != '' }}
+      run: |
+        sudo mkdir -p /home/plugins
+        cd ./.tmp/bin/${{ matrix.go_arch }}
+        tar -cvzf /home/plugins/spider-cni-plugins-linux-${{ matrix.go_arch }}-${{ inputs.ref }}.tar *
+
+    - name: Upload Binary artifact
+      if: ${{ inputs.ref != '' }}
+      uses: actions/upload-artifact@v3.1.0
+      with:
+        name: binary_files
+        path: /home/plugins
+        retention-days: 1
+

@@ -27,4 +27,5 @@ bin/
 gopath/
 .vagrant
 .idea
+./tmp
 /release-*
