@@ -1,0 +1,15 @@
+# This Dockerfile is used to build the image available on DockerHub
+FROM golang:1.18.1 as build
+
+ADD . /usr/src/cni-plugins
+
+RUN  cd /usr/src/cni-plugins && \
+     make build ARCH=arm64
+
+FROM arm64v8/alpine
+LABEL org.opencontainers.image.source https://github.com/spidernet-io/cni-plugins
+COPY --from=build /usr/src/cni-plugins/.tmp/bin /host/opt/cni/bin
+WORKDIR /
+
+ADD ./images/entrypoint.sh /
+ENTRYPOINT ["/entrypoint.sh"]

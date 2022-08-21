@@ -61,7 +61,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	// skip veth plugin
 	if conf.Skipped {
-		return nil
+		return types.PrintResult(conf.PrevResult, conf.CNIVersion)
 	}
 	if conf.PrevResult == nil {
 		return fmt.Errorf("must be called as chained plugin")
