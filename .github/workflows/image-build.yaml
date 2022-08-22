@@ -20,6 +20,9 @@ on:
       ref:
         required: true
         type: string
+      tag:
+        required: false
+        type: string
 
 permissions: write-all
 
@@ -30,7 +33,7 @@ jobs:
         go_arch: [amd64,arm64]
         plugin: [veth]
 
-    name: Image build ${{ matrix.plugin }}(${{ matrix.go_arch }})
+    name: Image build ${{ matrix.plugin }} ${{ matrix.go_arch }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out code into the Go module directory

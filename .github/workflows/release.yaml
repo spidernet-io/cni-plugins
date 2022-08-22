@@ -10,28 +10,33 @@ on:
   push:
     tags:
       - v*
+    branches:
+      - v*
   workflow_dispatch:
     inputs:
       ref:
         description: 'tag, sha, branch'
         required: true
         default: v1.0.0
+
 jobs:
   call-bin-workflow:
     uses: ./.github/workflows/bin-build.yaml
     with:
       ref: ${{ github.event.inputs.ref }}
+      tag: ${{ github.ref_name }}
     secrets: inherit
 
   call-image-workflow:
     uses: ./.github/workflows/image-build.yaml
     with:
       ref: ${{ github.event.inputs.ref }}
+      tag: ${{ github.ref_name }}
     secrets: inherit
 
-  create-release:
+  create-binary-release:
     runs-on: ubuntu-latest
-    name: Create Release
+    name: Create Binary Release
     needs: [call-bin-workflow,call-image-workflow]
     steps:
       - name: Get Release Tag
@@ -66,3 +71,33 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ steps.get_ref.outputs.ref }}
           name: "Release ${{ steps.get_ref.outputs.ref }}"
+
+  chart-release:
+    strategy:
+      matrix:
+        plugin: [veth]
+    name: Create Chart Release
+    runs-on: ubuntu-latest
+    needs: [call-bin-workflow,call-image-workflow]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Install Helm
+        uses: azure/setup-helm@v1
+        with:
+          version: v3.8.1
+
+      - name: Run chart-releaser
+        uses: helm/chart-releaser-action@v1.4.0
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"

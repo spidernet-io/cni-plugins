@@ -9,7 +9,10 @@ on:
   workflow_call:
     inputs:
       ref:
-        required: true
+        required: false
+        type: string
+      tag:
+        required: false
         type: string
   push:
     branch:
@@ -37,21 +40,40 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
+    - name: Get Upload
+      id: tag
+      run: |
+        if ${{ inputs.ref != '' }} ; then
+          echo "call by workflow_call"
+          echo ::set-output name=upload::true
+        elif ${{ inputs.tag != '' }} ; then
+          echo "call by workflow_call(release push)"
+          echo ::set-output name=upload::true
+        elif ${{ github.event_name == 'push' }} ; then
+          echo "trigger by push"
+          echo ::set-output name=upload::false
+        elif ${{ github.event_name == 'pull_request_target' }} ; then
+          echo "trigger by pull_request_target"
+          echo ::set-output name=upload::false
+        else
+          echo "unexpected event: ${{ github.event_name }}"
+          exit 1
+        fi
+
     - name: Build
       run:  make build ARCH=${{ matrix.go_arch }}
 
     - name: Tar Binary Files
-      if: ${{ inputs.ref != '' }}
+      if: ${{ steps.tag.outputs.upload == 'true' }}
       run: |
         sudo mkdir -p /home/plugins
         cd ./.tmp/bin/${{ matrix.go_arch }}
         tar -cvzf /home/plugins/spider-cni-plugins-linux-${{ matrix.go_arch }}-${{ inputs.ref }}.tar *
 
     - name: Upload Binary artifact
-      if: ${{ inputs.ref != '' }}
+      if: ${{ steps.tag.outputs.upload == 'true' }}
       uses: actions/upload-artifact@v3.1.0
       with:
         name: binary_files
         path: /home/plugins
         retention-days: 1
-
