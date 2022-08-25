@@ -73,9 +73,6 @@ jobs:
           name: "Release ${{ steps.get_ref.outputs.ref }}"
 
   chart-release:
-    strategy:
-      matrix:
-        plugin: [veth]
     name: Create Chart Release
     runs-on: ubuntu-latest
     needs: [call-bin-workflow,call-image-workflow]

@@ -5,7 +5,7 @@ metadata:
   name: kube-{{ .Chart.Name }}-ds
   namespace: kube-system
   labels:
-    {{- include "veth.labels" . | nindent 4 }}
+    {{- include "plugins.labels" . | nindent 4 }}
 {{- if .Values.annotations }}
   anotations:
     {{ toYaml .Values.instances.arp.ipAddressPools | indent 2 }}
@@ -13,7 +13,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app: veth
+      app: plugins
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
@@ -21,8 +21,8 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "veth.labels" . | nindent 8 }}
-        app: veth
+        {{- include "plugins.labels" . | nindent 8 }}
+        app: plugins
     spec:
       hostNetwork: true
       {{- with .Values.imagePullSecrets }}
@@ -54,4 +54,3 @@ spec:
         - name: cnibin
           hostPath:
             path: /opt/cni/bin
-

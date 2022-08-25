@@ -1,8 +1,8 @@
-# veth
+# plugins
 
 ![Version: v0.1.1](https://img.shields.io/badge/Version-v0.1.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v0.1.1](https://img.shields.io/badge/AppVersion-v0.1.1-informational?style=flat-square)
 
-Veth works with macvlan cni to solve some communication problems when macvlan is used as CNI.
+Plugins works with macvlan cni to solve some communication problems when macvlan is used as CNI.
 
 ## Maintainers
 
@@ -33,14 +33,14 @@ Veth works with macvlan cni to solve some communication problems when macvlan is
 ## Quick Install
 
 ```shell
-helm repo add veth https://spidernet-io.github.io/cni-plugins
-helm install veth -n kube-system .
+helm repo add cni-plugins https://spidernet-io.github.io/cni-plugins
+helm install cni-plugins/veth -n kube-system .
 ```
 
 By default, the image's tag is consistent with the Chart version, if you want to specify the image's tag, you can follow the command below:
 
 ```shell
-helm install veth -n kube-system . \
+helm install cni-plugins/veth -n kube-system . \
 --set image.tag=v0.1.1
 ```
 
