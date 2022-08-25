@@ -1,5 +1,21 @@
 apiVersion: v1
 entries:
+  plugins:
+  - apiVersion: v2
+    appVersion: v0.1.1
+    created: "2022-08-25T06:29:53.775905264Z"
+    description: Veth works with macvlan cni to solve some communication problems
+      when macvlan is used as CNI.
+    digest: 21b01c22fe016f4b92fd59f7ff340a20a0f0a61ad3eba88fde033b6dabad50cc
+    maintainers:
+    - name: Spider-Guys
+    name: plugins
+    sources:
+    - https://github.com/spidernet-io/cni-plugins
+    type: application
+    urls:
+    - https://github.com/spidernet-io/cni-plugins/releases/download/plugins-v0.1.1/plugins-v0.1.1.tgz
+    version: v0.1.1
   veth:
   - apiVersion: v2
     appVersion: v0.1.1
@@ -16,4 +32,4 @@ entries:
     urls:
     - https://github.com/spidernet-io/cni-plugins/releases/download/veth-v0.1.1/veth-v0.1.1.tgz
     version: v0.1.1
-generated: "2022-08-23T05:49:17.28441965Z"
+generated: "2022-08-25T06:29:53.775913664Z"
