@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: kube-{{ .Release.Name }}-ds
+  name: kube-{{ .Chart.Name }}-ds
   namespace: kube-system
   labels:
     {{- include "veth.labels" . | nindent 4 }}
