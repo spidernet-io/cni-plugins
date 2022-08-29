@@ -31,7 +31,6 @@ jobs:
     strategy:
       matrix:
         go_arch: [amd64,arm64]
-        plugin: [veth]
 
     name: Image build ${{ matrix.plugin }} ${{ matrix.go_arch }}
     runs-on: ubuntu-latest
@@ -87,8 +86,8 @@ jobs:
         with:
           context: ./
           push: ${{ steps.tag.outputs.push }}
-          tags: ghcr.io/${{ github.repository }}/${{ matrix.plugin }}:${{ steps.tag.outputs.version }}-${{ matrix.go_arch }}
-          file: ./images/${{ matrix.plugin }}/Dockerfile.${{ matrix.go_arch }}
+          tags: ghcr.io/${{ github.repository }}/meta-plugins:${{ steps.tag.outputs.version }}-${{ matrix.go_arch }}
+          file: ./images/Dockerfile.${{ matrix.go_arch }}
           platforms: linux/${{ matrix.go_arch }}
           build-args: |
             GIT_COMMIT_VERSION=${{ steps.arg.outputs.commitver }}

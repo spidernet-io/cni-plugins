@@ -13,33 +13,20 @@ import (
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	bv "github.com/containernetworking/plugins/pkg/utils/buildversion"
+	ty "github.com/spidernet-io/veth-plugin/pkg/types"
+	"github.com/spidernet-io/veth-plugin/pkg/utils"
 	"github.com/vishvananda/netlink"
 	"k8s.io/utils/pointer"
 	"net"
 	"runtime"
 )
 
-type RPFilterValue int
-
-const (
-	RPFilterDISABLE RPFilterValue = iota
-	RPFilterStrict
-	RPFilterLoose
-)
-
-type RPFilter struct {
-	// setup host rp_filter
-	Enable *bool `json:"enable,omitempty"`
-	// the value of rp_filter, must be 0/1/2
-	Value *RPFilterValue `json:"value,omitempty"`
-}
-
 type PluginConf struct {
 	types.NetConf
 	Routes []*types.Route `json:"routes,omitempty"`
 	// RpFilter
-	RPFilter *RPFilter `json:"rp_filter,omitempty"`
-	Skipped  bool      `json:"skip,omitempty"`
+	RPFilter *ty.RPFilter `json:"rp_filter,omitempty"`
+	Skipped  bool         `json:"skip_call,omitempty"`
 }
 
 func init() {
@@ -98,7 +85,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	// get all ips on the node
-	hostIPs, err := getHostIps()
+	hostIPs, err := utils.GetHostIps()
 	if err != nil {
 		return err
 	}
@@ -109,7 +96,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	// 2. setup neighborhood
-	if err = setupNeighborhood(netns, hostInterface, conInterface, hostIPs, conIPs); err != nil {
+	if err = setupNeighborhood(netns, hostInterface, conInterface, hostIPs, conIPs, args.ContainerID); err != nil {
 		return err
 	}
 
@@ -119,7 +106,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	// 4. setup sysctl rp_filter
-	if err = sysctlRPFilter(netns, conf.RPFilter); err != nil {
+	if err = utils.SysctlRPFilter(netns, conf.RPFilter); err != nil {
 		return err
 	}
 	return types.PrintResult(conf.PrevResult, conf.CNIVersion)
@@ -163,21 +150,25 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	// If not, giving default value: RPFilter_Loose(2) to it
 	if conf.RPFilter != nil {
 		if conf.RPFilter.Enable != nil && *conf.RPFilter.Enable {
-			matched := false
-			for _, value := range []RPFilterValue{RPFilterDISABLE, RPFilterStrict, RPFilterLoose} {
-				if *conf.RPFilter.Value == value {
-					matched = true
+			if conf.RPFilter.Value != nil {
+				matched := false
+				for _, value := range []int32{0, 1, 2} {
+					if *conf.RPFilter.Value == value {
+						matched = true
+					}
 				}
-			}
-			if !matched {
-				conf.RPFilter.Value = rpValue(RPFilterLoose)
+				if !matched {
+					conf.RPFilter.Value = pointer.Int32(2)
+				}
+			} else {
+				conf.RPFilter.Value = pointer.Int32(2)
 			}
 		}
 	} else {
 		// give default value: RPFilter_Loose(2)
-		conf.RPFilter = &RPFilter{
+		conf.RPFilter = &ty.RPFilter{
 			Enable: pointer.Bool(true),
-			Value:  rpValue(RPFilterLoose),
+			Value:  pointer.Int32(2),
 		}
 	}
 
@@ -218,15 +209,22 @@ func setupVeth(netns ns.NetNS, containerID string, pr *current.Result) (*current
 
 // setupNeighborhood setup neighborhood tables for pod and host.
 // equivalent to: `ip neigh add ....`
-func setupNeighborhood(netns ns.NetNS, hostInterface, conInterface *current.Interface, hostIPs, conIPs []string) error {
+func setupNeighborhood(netns ns.NetNS, hostInterface, conInterface *current.Interface, hostIPs, conIPs []string, containerID string) error {
 	var err error
 	// set neighborhood on host
 	if err = neiAdd(hostInterface.Name, conInterface.Mac, conIPs); err != nil {
 		return err
 	}
 	// set up neighborhood in pod
+
+	// bug?: sometimes hostveth's mac not be correct, we get hosVeth's mac via LinkByName
+	link, err := netlink.LinkByName(getHostVethName(containerID))
+	if err != nil {
+		return err
+	}
+
 	err = netns.Do(func(_ ns.NetNS) error {
-		if err := neiAdd(defaultConVeth, hostInterface.Mac, hostIPs); err != nil {
+		if err := neiAdd(defaultConVeth, link.Attrs().HardwareAddr.String(), hostIPs); err != nil {
 			return err
 		}
 		return nil
@@ -240,7 +238,7 @@ func setupNeighborhood(netns ns.NetNS, hostInterface, conInterface *current.Inte
 func setupRoutes(netns ns.NetNS, hostInterface, conInterface *current.Interface, hostIPs, conIPs []string, routes []*types.Route) error {
 	var err error
 	// set routes for host
-	if err = routeAdd(hostInterface.Name, conIPs); err != nil {
+	if err = utils.RouteAdd(hostInterface.Name, conIPs); err != nil {
 		return err
 	}
 
@@ -248,7 +246,7 @@ func setupRoutes(netns ns.NetNS, hostInterface, conInterface *current.Interface,
 	err = netns.Do(func(_ ns.NetNS) error {
 		// add host ip route
 		// equiva to "ip r add hostIP dev veth"
-		if err = routeAdd(conInterface.Name, hostIPs); err != nil {
+		if err = utils.RouteAdd(conInterface.Name, hostIPs); err != nil {
 			return err
 		}
 
@@ -303,26 +301,4 @@ func setupRoutes(netns ns.NetNS, hostInterface, conInterface *current.Interface,
 		return nil
 	})
 	return err
-}
-
-// setSysctlRp set rp_filter value
-func sysctlRPFilter(netns ns.NetNS, rp *RPFilter) error {
-	var err error
-	// set host rp_filter
-	if *rp.Enable {
-		if err = setRPFilter(); err != nil {
-			return err
-		}
-	}
-	// set pod rp_filter
-	err = netns.Do(func(_ ns.NetNS) error {
-		if err := setRPFilter(); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	return nil
 }

@@ -1,6 +1,11 @@
-# veth-plugin
+# CNI-Meta-Plugin
+
+- **veth**
+- **router**
 
 ## Why
+
+
 
 ## How to start
 
@@ -39,7 +44,7 @@
                 "enable": true,
                 "value": 2
             },
-            "skip": false
+            "skip_call": false
         }
     ]
 }
