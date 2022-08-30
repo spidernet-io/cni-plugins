@@ -13,6 +13,7 @@ import (
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	bv "github.com/containernetworking/plugins/pkg/utils/buildversion"
+	"github.com/containernetworking/plugins/pkg/utils/sysctl"
 	ty "github.com/spidernet-io/cni-plugins/pkg/types"
 	"github.com/spidernet-io/cni-plugins/pkg/utils"
 	"github.com/vishvananda/netlink"
@@ -104,7 +105,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	// if so, skip it
 	if isSkipped(netns) {
 		fmt.Fprintf(os.Stderr, "%s veth interface %s has been inserted in pod network namespace, finish\n", logPrefix, defaultConVeth)
-		return nil
+		return types.PrintResult(conf.PrevResult, conf.CNIVersion)
 	}
 
 	// 1. setup veth pair
@@ -258,8 +259,22 @@ func setupNeighborhood(netns ns.NetNS, hostInterface, chainedInterface *current.
 	}
 	err = netns.Do(func(_ ns.NetNS) error {
 		if err := neighborAdd(defaultConVeth, hostVethLink.Attrs().HardwareAddr.String(), hostIPs); err != nil {
+			ipv6SysctlValueName := fmt.Sprintf("net/ipv6/conf/%s/disable_ipv6", defaultConVeth)
+
+			// Read current sysctl value
+			value, err := sysctl.Sysctl(ipv6SysctlValueName)
+			if err != nil {
+				return err
+			}
+
+			if value != "0" {
+				if _, err = sysctl.Sysctl(ipv6SysctlValueName, "0"); err != nil {
+					return err
+				}
+			}
 			return err
 		}
+
 		return nil
 	})
 

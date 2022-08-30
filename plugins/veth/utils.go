@@ -65,10 +65,9 @@ func neighborAdd(iface, mac string, ips []string) error {
 			LinkIndex:    link.Attrs().Index,
 			State:        netlink.NUD_PERMANENT,
 			Type:         netlink.NDA_LLADDR,
-			Flags:        netlink.NTF_SELF,
 			IP:           net.ParseIP(ip),
 			HardwareAddr: parseMac(mac),
-		}); err != nil {
+		}); err != nil && err.Error() != "file exists" {
 			return err
 		}
 	}
