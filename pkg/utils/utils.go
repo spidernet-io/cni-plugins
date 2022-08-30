@@ -103,13 +103,13 @@ func SysctlRPFilter(netns ns.NetNS, rp *types.RPFilter) error {
 	var err error
 	// set host rp_filter
 	if *rp.Enable {
-		if err = setRPFilter(); err != nil {
+		if err = setRPFilter(*rp.Value); err != nil {
 			return err
 		}
 	}
 	// set pod rp_filter
 	err = netns.Do(func(_ ns.NetNS) error {
-		if err := setRPFilter(); err != nil {
+		if err := setRPFilter(*rp.Value); err != nil {
 			return err
 		}
 		return nil
@@ -120,8 +120,8 @@ func SysctlRPFilter(netns ns.NetNS, rp *types.RPFilter) error {
 	return nil
 }
 
-// setRPFilter set rp_filter parameters to 2
-func setRPFilter() error {
+// setRPFilter set rp_filter parameters
+func setRPFilter(v int32) error {
 	dirs, err := os.ReadDir(sysctlConfPath)
 	if err != nil {
 		return fmt.Errorf("[veth]failed to set rp_filter: %v", err)
@@ -133,7 +133,7 @@ func setRPFilter() error {
 			continue
 		}
 		if value == "1" {
-			if _, e := sysctl.Sysctl(name, "2"); e != nil {
+			if _, e := sysctl.Sysctl(name, fmt.Sprintf("%d", v)); e != nil {
 				return e
 			}
 		}
