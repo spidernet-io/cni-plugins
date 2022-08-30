@@ -1,0 +1,101 @@
+name: Auto Golang Lint And Unitest
+
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
+      - release-*
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'branch, sha, tag'
+        required: true
+        default: main
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+
+permissions: write-all
+
+jobs:
+  filter_changes:
+    name: Deduce required tests from code changes
+    runs-on: ubuntu-latest
+    outputs:
+      check: ${{ steps.result.outputs.check }}
+      ref: ${{ steps.result.outputs.ref }}
+    steps:
+      - name: Check Go Code Changes
+        uses: dorny/paths-filter@v2.10.2
+        if: ${{ github.event_name == 'pull_request' }}
+        id: filter_pr
+        with:
+          base: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          filters: |
+            src:
+              - .github/workflows/lint-golang.yaml
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+
+      - name: Result
+        id: result
+        run: |
+          if ${{ github.event_name == 'push' }} ; then
+              echo "trigger by push"
+              echo "::set-output name=check::true"
+              echo "::set-output name=ref::${{ github.sha }}"
+          elif ${{ github.event_name == 'pull_request' }} ; then
+              echo "trigger by pull_request"
+              flag=${{ steps.filter_pr.outputs.src }}
+              echo "::set-output name=check::${flag}"
+              ref=${{ github.event.pull_request.head.sha }}
+              echo "::set-output name=ref::${ref}"
+          elif ${{ inputs.ref != '' }} ; then
+              echo "trigger by workflow_call"
+              echo "::set-output name=check::true"
+              echo "::set-output name=ref::${{ inputs.ref }}"
+          elif ${{ github.event_name == 'workflow_dispatch' }} ; then
+              echo "trigger by workflow_dispatch"
+              echo "::set-output name=check::true"
+              echo "::set-output name=ref::${{ github.event.inputs.ref }}"
+          else
+              echo "error, unexpected event "
+              exit 1
+          fi
+
+  lint-golang:
+    needs: filter_changes
+    if: ${{ needs.filter_changes.outputs.check == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.19.0
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+          ref: ${{ needs.filter_changes.outputs.ref }}
+
+      - name: Check module vendoring
+        run: |
+          go mod tidy
+          go mod vendor
+          if ! test -z "$(git status --porcelain)"; then
+              echo "please run 'go mod tidy && go mod vendor', and submit your changes"
+              exit 1
+          fi
+
+      - name: Run golangci-lint
+        id: golangci_lint
+        continue-on-error: true
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
