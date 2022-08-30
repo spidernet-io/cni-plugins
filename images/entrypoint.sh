@@ -2,7 +2,7 @@
 
 function log()
 {
-    echo "$(date --iso-8601=seconds) ${1}"
+    echo "$(date +%Y-%m-%d" "%H:%M:%S) ${1}"
 }
 
 cp /home/* /host/opt/cni/bin/

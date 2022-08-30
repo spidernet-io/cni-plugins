@@ -11,63 +11,12 @@ import (
 	"github.com/vishvananda/netlink"
 	"net"
 	"os"
-	"regexp"
-	"strings"
 )
 
 var defaultInterfaceName = "eth0"
 var defaultMtu = 1500
 var defaultConVeth = "veth0"
 var sysctlConfPath = "/proc/sys/net/ipv4/conf"
-
-var DefaultInterfacesToExclude = []string{
-	"docker.*", "cbr.*", "dummy.*",
-	"virbr.*", "lxcbr.*", "veth.*", "lo",
-	"cali.*", "tunl.*", "flannel.*", "kube-ipvs.*", "cni.*",
-}
-
-// getHostIps return all ip addresses on the node, including ipv4 and ipv6.
-// skipping any interfaces whose name matches any of the exclusion list regexes
-func getHostIps() ([]string, error) {
-	netIfaces, err := net.Interfaces()
-	if err != nil {
-		return nil, fmt.Errorf("[veth] getHostIps: %v ", err)
-	}
-
-	var ips []string
-	var excludeRegexp *regexp.Regexp
-
-	if excludeRegexp, err = regexp.Compile("(" + strings.Join(DefaultInterfacesToExclude, ")|(") + ")"); err != nil {
-		return nil, err
-	}
-
-	// Loop through interfaces filtering on the regexes.
-	for idx := len(netIfaces) - 1; idx >= 0; idx-- {
-		iface := netIfaces[idx]
-		exclude := (excludeRegexp != nil) && excludeRegexp.MatchString(iface.Name)
-		if !exclude {
-			addrs, err := iface.Addrs()
-			if err != nil {
-				return nil, err
-			}
-			for _, addr := range addrs {
-				ip, _, err := net.ParseCIDR(addr.String())
-				if err != nil {
-					continue
-				}
-				if ip.IsMulticast() || ip.IsLinkLocalUnicast() {
-					continue
-				}
-				ips = append(ips, ip.String())
-			}
-		}
-	}
-
-	if len(ips) == 0 {
-		return nil, fmt.Errorf("[veth]no one vaild ip on the node")
-	}
-	return ips, nil
-}
 
 // getConIPs return all ip addresses on the eth0 NIC of a given netns, including ipv4 and ipv6
 func getConIps(netns ns.NetNS) ([]string, error) {
@@ -121,34 +70,6 @@ func neiAdd(iface, mac string, ips []string) error {
 			Flags:        netlink.NTF_SELF,
 			IP:           net.ParseIP(ip),
 			HardwareAddr: parseMac(mac),
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// routeAdd add route tables
-func routeAdd(iface string, ips []string) error {
-	link, err := netlink.LinkByName(iface)
-	if err != nil {
-		return err
-	}
-	for _, ip := range ips {
-		netIP := net.ParseIP(ip)
-		dst := &net.IPNet{
-			IP: netIP,
-		}
-		if netIP.To4() != nil {
-			dst.Mask = net.CIDRMask(32, 32)
-		} else {
-			dst.Mask = net.CIDRMask(128, 128)
-		}
-
-		if err = netlink.RouteAdd(&netlink.Route{
-			LinkIndex: link.Attrs().Index,
-			Scope:     netlink.SCOPE_LINK,
-			Dst:       dst,
 		}); err != nil {
 			return err
 		}
@@ -237,8 +158,4 @@ func min(len int) int {
 		return 11
 	}
 	return len
-}
-
-func rpValue(value RPFilterValue) *RPFilterValue {
-	return &value
 }
