@@ -9,6 +9,7 @@ import (
 	"github.com/containernetworking/cni/pkg/version"
 	"github.com/containernetworking/plugins/pkg/ns"
 	bv "github.com/containernetworking/plugins/pkg/utils/buildversion"
+	"github.com/containernetworking/plugins/pkg/utils/sysctl"
 	ty "github.com/spidernet-io/cni-plugins/pkg/types"
 	"github.com/spidernet-io/cni-plugins/pkg/utils"
 	"github.com/vishvananda/netlink"
@@ -20,7 +21,6 @@ import (
 type PluginConf struct {
 	types.NetConf
 	Routes []*types.Route `json:"routes,omitempty"`
-
 	// RpFilter
 	DelDefaultRoute4        *bool  `json:"delDefaultRoute4,omitempty"`
 	DelDefaultRoute6        *bool  `json:"delDefaultRoute6,omitempty"`
@@ -71,6 +71,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	if err := addRoute(netns, conf); err != nil {
 		return fmt.Errorf("[router] failed to add route: %v", err)
 	}
+
 	// Add rule route table
 	if err := addRouteRule(netns, conf); err != nil {
 		return fmt.Errorf("[router] failed to add route rule: %v", err)
@@ -208,26 +209,43 @@ func updateDefaultRoute(iface string, ipfamily int) error {
 
 func addRoute(netns ns.NetNS, conf *PluginConf) error {
 	var err error
+	var disableIPv6SysctlTemplate = "net/ipv6/conf/%s/disable_ipv6"
 	hostIPs, err := utils.GetHostIps()
 	if err != nil {
 		return err
 	}
 	err = netns.Do(func(_ ns.NetNS) error {
+		ipv6SysctlValueName := fmt.Sprintf(disableIPv6SysctlTemplate, conf.DefaultOverlayInterface)
+
+		// Read current sysctl value
+		value, err := sysctl.Sysctl(ipv6SysctlValueName)
+		if err != nil {
+			return err
+		}
+
+		// make sure value=1
+		if value == "1" {
+			if _, err = sysctl.Sysctl(ipv6SysctlValueName, "0"); err != nil {
+				return err
+			}
+		}
+
 		// add node ip route
 		if err = utils.RouteAdd(conf.DefaultOverlayInterface, hostIPs); err != nil {
 			return err
 		}
-		// add calico/service cidr route
+		// add calico/service...custom route
 		link, err := netlink.LinkByName(conf.DefaultOverlayInterface)
 		if err != nil {
 			return err
 		}
+
 		for _, route := range conf.Routes {
 			if err = netlink.RouteAdd(&netlink.Route{
 				LinkIndex: link.Attrs().Index,
 				Scope:     netlink.SCOPE_LINK,
 				Dst:       &route.Dst,
-			}); err != nil {
+			}); err != nil && err.Error() != "file exists" {
 				return err
 			}
 		}

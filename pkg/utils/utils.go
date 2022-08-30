@@ -16,6 +16,8 @@ import (
 // var defaultMtu = 1500
 // var defaultConVeth = "veth0"
 var sysctlConfPath = "/proc/sys/net/ipv4/conf"
+var disableIPv6SysctlTemplate = "net/ipv6/conf/%s/disable_ipv6"
+var ErrFileExists = "file exists"
 
 var DefaultInterfacesToExclude = []string{
 	"docker.*", "cbr.*", "dummy.*",
@@ -87,7 +89,7 @@ func RouteAdd(iface string, ips []string) error {
 			LinkIndex: link.Attrs().Index,
 			Scope:     netlink.SCOPE_LINK,
 			Dst:       dst,
-		}); err != nil {
+		}); err != nil && err.Error() != ErrFileExists {
 			return err
 		}
 	}
