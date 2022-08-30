@@ -11,12 +11,13 @@ import (
 	"net"
 )
 
-var defaultInterfaceName = "eth0"
 var defaultMtu = 1500
+
+// the interface added by this plugin
 var defaultConVeth = "veth0"
 
-// getConIPs return all ip addresses on the eth0 NIC of a given netns, including ipv4 and ipv6
-func getConIps(netns ns.NetNS) ([]string, error) {
+// getChainedInterfaceIps return all ip addresses on the NIC of a given netns, including ipv4 and ipv6
+func getChainedInterfaceIps(netns ns.NetNS, interfacenName string) ([]string, error) {
 	ips := make([]string, 0, 2)
 	err := netns.Do(func(_ ns.NetNS) error {
 		ipv4, ipv6 := false, false
@@ -25,7 +26,7 @@ func getConIps(netns ns.NetNS) ([]string, error) {
 			return fmt.Errorf("[veth] failed to list interfaces inside pod")
 		}
 		for _, iface := range ifaces {
-			if iface.Name == defaultInterfaceName {
+			if iface.Name == interfacenName {
 				addrs, err := iface.Addrs()
 				if err != nil {
 					return err
@@ -51,8 +52,8 @@ func getConIps(netns ns.NetNS) ([]string, error) {
 	return ips, nil
 }
 
-// neiAdd add static neighborhood tales
-func neiAdd(iface, mac string, ips []string) error {
+// neighborAdd add static neighborhood tales
+func neighborAdd(iface, mac string, ips []string) error {
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
 		return err
@@ -129,8 +130,11 @@ func filterIPs(netIP net.IP, ipv4, ipv6 bool, viaIps []string) (bool, bool, []st
 		ipv4 = true
 	}
 	if netIP.To4() == nil && !ipv6 {
-		viaIps = append(viaIps, netIP.String())
-		ipv6 = true
+		// for ipv6, ignore LinkLocalUnicast
+		if netIP.IsLinkLocalUnicast() {
+			viaIps = append(viaIps, netIP.String())
+			ipv6 = true
+		}
 	}
 	return ipv4, ipv6, viaIps
 }

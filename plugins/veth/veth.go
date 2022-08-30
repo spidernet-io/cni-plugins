@@ -13,11 +13,13 @@ import (
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	bv "github.com/containernetworking/plugins/pkg/utils/buildversion"
-	ty "github.com/spidernet-io/veth-plugin/pkg/types"
-	"github.com/spidernet-io/veth-plugin/pkg/utils"
+	ty "github.com/spidernet-io/cni-plugins/pkg/types"
+	"github.com/spidernet-io/cni-plugins/pkg/utils"
 	"github.com/vishvananda/netlink"
 	"k8s.io/utils/pointer"
 	"net"
+	"os"
+	"path/filepath"
 	"runtime"
 )
 
@@ -29,6 +31,16 @@ type PluginConf struct {
 	Skipped  bool         `json:"skip_call,omitempty"`
 }
 
+// K8sArgs is the valid CNI_ARGS used for Kubernetes
+type K8sArgs struct {
+	types.CommonArgs
+	IP                         net.IP
+	K8S_POD_NAME               types.UnmarshallableString //revive:disable-line
+	K8S_POD_NAMESPACE          types.UnmarshallableString //revive:disable-line
+	K8S_POD_INFRA_CONTAINER_ID types.UnmarshallableString //revive:disable-line
+	K8S_POD_UID                types.UnmarshallableString //revive:disable-line
+}
+
 func init() {
 	// this ensures that main runs only on main thread (thread group leader).
 	// since namespace ops (unshare, setns) are done for a single thread, we
@@ -36,8 +48,10 @@ func init() {
 	runtime.LockOSThread()
 }
 
+var binName = filepath.Base(os.Args[0])
+
 func main() {
-	skel.PluginMain(cmdAdd, cmdCheck, cmdDel, version.All, bv.BuildString("veth"))
+	skel.PluginMain(cmdAdd, cmdCheck, cmdDel, version.All, bv.BuildString(binName))
 }
 
 func cmdAdd(args *skel.CmdArgs) error {
@@ -46,21 +60,35 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return err
 	}
 
+	k8sArgs := K8sArgs{}
+	if err = types.LoadArgs(args.Args, &k8sArgs); nil != err {
+		return fmt.Errorf("failed to get pod information, error=%+v \n", err)
+	}
+	logPrefix := fmt.Sprintf("[ plugin=%s podNamespace=%s, podName=%s, containerID=%s ]", binName, k8sArgs.K8S_POD_NAMESPACE, k8sArgs.K8S_POD_NAME, args.ContainerID)
+
 	// skip veth plugin
 	if conf.Skipped {
 		return types.PrintResult(conf.PrevResult, conf.CNIVersion)
 	}
 	if conf.PrevResult == nil {
-		return fmt.Errorf("must be called as chained plugin")
+		return fmt.Errorf("%s failed to find PrevResult, must be called as chained plugin", logPrefix)
 	}
 
 	prevResult, err := current.GetResult(conf.PrevResult)
 	if err != nil {
-		return fmt.Errorf("failed to convert prevResult: %v", err)
+		return fmt.Errorf("%s failed to convert prevResult: %v", logPrefix, err)
 	}
 
 	if len(prevResult.IPs) == 0 {
-		return fmt.Errorf("got no container IPs")
+		return fmt.Errorf("%s got no container IPs", logPrefix)
+	}
+
+	if len(prevResult.Interfaces) == 0 {
+		return fmt.Errorf("%s failed to find interface from prevResult", logPrefix)
+	}
+	preInterfaceName := prevResult.Interfaces[0].Name
+	if len(preInterfaceName) == 0 {
+		return fmt.Errorf("%s failed to find interface name from prevResult", logPrefix)
 	}
 
 	// Pass the prevResult through this plugin to the next one
@@ -68,47 +96,53 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	netns, err := ns.GetNS(args.Netns)
 	if err != nil {
-		return fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
+		return fmt.Errorf("%s failed to open netns %q: %v", logPrefix, args.Netns, err)
 	}
 	defer netns.Close()
 
 	// Check if the veth-plugin has been executed
 	// if so, skip it
 	if isSkipped(netns) {
+		fmt.Fprintf(os.Stderr, "%s veth interface %s has been inserted in pod network namespace, finish\n", logPrefix, defaultConVeth)
 		return nil
 	}
 
 	// 1. setup veth pair
 	hostInterface, conInterface, err := setupVeth(netns, args.ContainerID, prevResult)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s failed to setupVeth: %v", logPrefix, err)
 	}
 
 	// get all ips on the node
 	hostIPs, err := utils.GetHostIps()
 	if err != nil {
-		return err
+		return fmt.Errorf("%s failed to GetHostIps: %v", logPrefix, err)
 	}
-	// get ips from pod eth0
-	conIPs, err := getConIps(netns)
-	if err != nil {
-		return err
+	fmt.Fprintf(os.Stderr, "%s get host ip: %v \n", logPrefix, hostIPs)
+
+	// get ips from pod
+	conIPs, err := getChainedInterfaceIps(netns, preInterfaceName)
+	if err != nil || len(conIPs) == 0 {
+		return fmt.Errorf("%s failed to find ip from chained interface %s : %v", logPrefix, preInterfaceName, err)
 	}
+	fmt.Fprintf(os.Stderr, "%s get ip of chained interface %s : %v \n", logPrefix, preInterfaceName, conIPs)
 
 	// 2. setup neighborhood
 	if err = setupNeighborhood(netns, hostInterface, conInterface, hostIPs, conIPs, args.ContainerID); err != nil {
-		return err
+		return fmt.Errorf("%s failed to setup neighbor: %v", logPrefix, err)
 	}
 
 	// 3. setup routes
 	if err = setupRoutes(netns, hostInterface, conInterface, hostIPs, conIPs, conf.Routes); err != nil {
-		return err
+		return fmt.Errorf("%s failed to setup route: %v", logPrefix, err)
 	}
 
 	// 4. setup sysctl rp_filter
 	if err = utils.SysctlRPFilter(netns, conf.RPFilter); err != nil {
-		return err
+		return fmt.Errorf("%s failed to setup sysctl: %v", logPrefix, err)
 	}
+
+	fmt.Fprintf(os.Stderr, "%s succeeded to add veth interface for chained interface %s \n", logPrefix, preInterfaceName)
 	return types.PrintResult(conf.PrevResult, conf.CNIVersion)
 }
 
@@ -209,22 +243,21 @@ func setupVeth(netns ns.NetNS, containerID string, pr *current.Result) (*current
 
 // setupNeighborhood setup neighborhood tables for pod and host.
 // equivalent to: `ip neigh add ....`
-func setupNeighborhood(netns ns.NetNS, hostInterface, conInterface *current.Interface, hostIPs, conIPs []string, containerID string) error {
+func setupNeighborhood(netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, containerID string) error {
 	var err error
 	// set neighborhood on host
-	if err = neiAdd(hostInterface.Name, conInterface.Mac, conIPs); err != nil {
+	if err = neighborAdd(hostInterface.Name, chainedInterface.Mac, conIPs); err != nil {
 		return err
 	}
-	// set up neighborhood in pod
 
+	// set up neighborhood in pod
 	// bug?: sometimes hostveth's mac not be correct, we get hosVeth's mac via LinkByName
-	link, err := netlink.LinkByName(getHostVethName(containerID))
+	hostVethLink, err := netlink.LinkByName(getHostVethName(containerID))
 	if err != nil {
 		return err
 	}
-
 	err = netns.Do(func(_ ns.NetNS) error {
-		if err := neiAdd(defaultConVeth, link.Attrs().HardwareAddr.String(), hostIPs); err != nil {
+		if err := neighborAdd(defaultConVeth, hostVethLink.Attrs().HardwareAddr.String(), hostIPs); err != nil {
 			return err
 		}
 		return nil
@@ -235,7 +268,7 @@ func setupNeighborhood(netns ns.NetNS, hostInterface, conInterface *current.Inte
 
 // setupRoutes setup routes for pod and host
 // equivalent to: `ip route add $route`
-func setupRoutes(netns ns.NetNS, hostInterface, conInterface *current.Interface, hostIPs, conIPs []string, routes []*types.Route) error {
+func setupRoutes(netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, routes []*types.Route) error {
 	var err error
 	// set routes for host
 	if err = utils.RouteAdd(hostInterface.Name, conIPs); err != nil {
@@ -246,18 +279,18 @@ func setupRoutes(netns ns.NetNS, hostInterface, conInterface *current.Interface,
 	err = netns.Do(func(_ ns.NetNS) error {
 		// add host ip route
 		// equiva to "ip r add hostIP dev veth"
-		if err = utils.RouteAdd(conInterface.Name, hostIPs); err != nil {
+		if err = utils.RouteAdd(chainedInterface.Name, hostIPs); err != nil {
 			return err
 		}
 
 		// setup custom routes from cni conf
 		// such as calico cidr, service cidr
-		link, err := netlink.LinkByName(conInterface.Name)
+		link, err := netlink.LinkByName(chainedInterface.Name)
 		if err != nil {
 			return err
 		}
 
-		// get one host ipv4 ip and one host ipv6 ip(if exist)
+		// get one host ipv4 ip and one host ipv6 ip, as destination (if exist)
 		ipv4, ipv6 := false, false
 		viaIPs := make([]string, 0, 2)
 		for _, ip := range hostIPs {
@@ -265,36 +298,36 @@ func setupRoutes(netns ns.NetNS, hostInterface, conInterface *current.Interface,
 			ipv4, ipv6, viaIPs = filterIPs(netIP, ipv4, ipv6, viaIPs)
 		}
 
-		ipMap := make(map[string]net.IP)
+		var destHostIpv4, destHostIpv6 *net.IP
 		for _, viaIP := range viaIPs {
 			netIP := net.ParseIP(viaIP)
 			if netIP.To4() != nil {
-				ipMap["ipv4"] = netIP
+				destHostIpv4 = &netIP
 			} else {
-				ipMap["ipv6"] = netIP
+				destHostIpv6 = &netIP
 			}
 		}
 
 		for _, route := range routes {
 			gw := net.IP{}
 			if route.Dst.IP.To4() != nil {
-				if _, ok := ipMap["ipv4"]; ok {
-					gw = ipMap["ipv4"]
+				if destHostIpv4 != nil {
+					gw = *destHostIpv4
 				}
 			} else {
-				if _, ok := ipMap["ipv6"]; ok {
-					gw = ipMap["ipv6"]
+				if destHostIpv6 != nil {
+					gw = *destHostIpv6
 				}
 			}
 			if len(gw) == 0 {
-				return fmt.Errorf("[veth]add route: %v failed: can't found next hop", route.Dst.String())
+				return fmt.Errorf("[veth] failed to add route: %v: can't found next hop", route.Dst.String())
 			}
 			if err = netlink.RouteAdd(&netlink.Route{
 				LinkIndex: link.Attrs().Index,
 				Dst:       &route.Dst,
 				Gw:        gw,
 			}); err != nil {
-				return fmt.Errorf("[veth]add route: %v failed: %v ", route.Dst.String(), err)
+				return fmt.Errorf("[veth] failed to add route: %v: %v ", route.Dst.String(), err)
 			}
 		}
 

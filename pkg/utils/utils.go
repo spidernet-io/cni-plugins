@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/containernetworking/plugins/pkg/utils/sysctl"
-	"github.com/spidernet-io/veth-plugin/pkg/types"
+	"github.com/spidernet-io/cni-plugins/pkg/types"
 	"github.com/vishvananda/netlink"
 	"net"
 	"os"
