@@ -130,11 +130,8 @@ func filterIPs(netIP net.IP, ipv4, ipv6 bool, viaIps []string) (bool, bool, []st
 		ipv4 = true
 	}
 	if netIP.To4() == nil && !ipv6 {
-		// for ipv6, ignore LinkLocalUnicast
-		if netIP.IsLinkLocalUnicast() {
-			viaIps = append(viaIps, netIP.String())
-			ipv6 = true
-		}
+		viaIps = append(viaIps, netIP.String())
+		ipv6 = true
 	}
 	return ipv4, ipv6, viaIps
 }
