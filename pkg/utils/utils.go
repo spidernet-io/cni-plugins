@@ -12,9 +12,9 @@ import (
 	"strings"
 )
 
-var defaultInterfaceName = "eth0"
-var defaultMtu = 1500
-var defaultConVeth = "veth0"
+// var defaultInterfaceName = "eth0"
+// var defaultMtu = 1500
+// var defaultConVeth = "veth0"
 var sysctlConfPath = "/proc/sys/net/ipv4/conf"
 
 var DefaultInterfacesToExclude = []string{
@@ -95,10 +95,7 @@ func RouteAdd(iface string, ips []string) error {
 }
 
 func IsInSubnet(netIP net.IP, subnet net.IPNet) bool {
-	if subnet.Contains(netIP) {
-		return true
-	}
-	return false
+	return subnet.Contains(netIP)
 }
 
 // SysctlRPFilter set rp_filter value
@@ -136,7 +133,9 @@ func setRPFilter() error {
 			continue
 		}
 		if value == "1" {
-			sysctl.Sysctl(name, "2")
+			if _, e := sysctl.Sysctl(name, "2"); e != nil {
+				return e
+			}
 		}
 	}
 	return nil

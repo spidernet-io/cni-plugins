@@ -7,16 +7,13 @@ import (
 	"fmt"
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
-	"github.com/containernetworking/plugins/pkg/utils/sysctl"
 	"github.com/vishvananda/netlink"
 	"net"
-	"os"
 )
 
 var defaultInterfaceName = "eth0"
 var defaultMtu = 1500
 var defaultConVeth = "veth0"
-var sysctlConfPath = "/proc/sys/net/ipv4/conf"
 
 // getConIPs return all ip addresses on the eth0 NIC of a given netns, including ipv4 and ipv6
 func getConIps(netns ns.NetNS) ([]string, error) {
@@ -92,6 +89,8 @@ func setLinkup(iface string) error {
 }
 
 // setRPFilter set rp_filter parameters to 2
+/*
+var sysctlConfPath = "/proc/sys/net/ipv4/conf"
 func setRPFilter() error {
 	dirs, err := os.ReadDir(sysctlConfPath)
 	if err != nil {
@@ -104,11 +103,14 @@ func setRPFilter() error {
 			continue
 		}
 		if value == "1" {
-			sysctl.Sysctl(name, "2")
+			if _, e := sysctl.Sysctl(name, "2"); e != nil {
+				return e
+			}
 		}
 	}
 	return nil
 }
+*/
 
 // parseMac parse hardware addr from given string
 func parseMac(s string) net.HardwareAddr {
@@ -141,7 +143,7 @@ func getHostVethName(containerID string) string {
 // isSkipped returns true by checking if the veth0  exists in the container
 func isSkipped(netns ns.NetNS) bool {
 	skipped := false
-	netns.Do(func(_ ns.NetNS) error {
+	e := netns.Do(func(_ ns.NetNS) error {
 		_, err := netlink.LinkByName(defaultConVeth)
 		if err != nil && err == ip.ErrLinkNotFound {
 			skipped = true
@@ -149,6 +151,9 @@ func isSkipped(netns ns.NetNS) bool {
 		}
 		return nil
 	})
+	if e != nil {
+		fmt.Printf("error, failed to check link status, detail=%+v \n", e)
+	}
 
 	return skipped
 }
