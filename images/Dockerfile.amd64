@@ -6,7 +6,7 @@ RUN  cd /usr/src/cni-plugins && make build
 
 FROM alpine:latest
 LABEL org.opencontainers.image.source https://github.com/spidernet-io/cni-plugins
-COPY --from=build /usr/src/cni-plugins/.tmp/bin/amd64/ /home
+COPY --from=build /usr/src/cni-plugins/.tmp/bin/amd64/ /home/cnibin
 WORKDIR /
 ADD ./images/entrypoint.sh /
 
