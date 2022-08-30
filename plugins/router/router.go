@@ -9,10 +9,12 @@ import (
 	"github.com/containernetworking/cni/pkg/version"
 	"github.com/containernetworking/plugins/pkg/ns"
 	bv "github.com/containernetworking/plugins/pkg/utils/buildversion"
-	ty "github.com/spidernet-io/veth-plugin/pkg/types"
-	"github.com/spidernet-io/veth-plugin/pkg/utils"
+	ty "github.com/spidernet-io/cni-plugins/pkg/types"
+	"github.com/spidernet-io/cni-plugins/pkg/utils"
 	"github.com/vishvananda/netlink"
 	"k8s.io/utils/pointer"
+	"os"
+	"path/filepath"
 )
 
 type PluginConf struct {
@@ -29,7 +31,8 @@ type PluginConf struct {
 }
 
 func main() {
-	skel.PluginMain(cmdAdd, cmdCheck, cmdDel, version.All, bv.BuildString("veth"))
+	binName := filepath.Base(os.Args[0])
+	skel.PluginMain(cmdAdd, cmdCheck, cmdDel, version.All, bv.BuildString(binName))
 }
 
 func cmdAdd(args *skel.CmdArgs) error {
