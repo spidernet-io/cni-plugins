@@ -33,15 +33,15 @@ Plugins works with macvlan cni to solve some communication problems when macvlan
 ## Quick Install
 
 ```shell
-helm repo add cni-plugins https://spidernet-io.github.io/cni-plugins
-helm install cni-plugins/veth -n kube-system .
+helm repo add cni-meta-plugins https://spidernet-io.github.io/cni-plugins
+helm install meta-meta-plugins cni-meta-plugins/meta-meta-plugins -n kube-system 
 ```
 
 By default, the image's tag is consistent with the Chart version, if you want to specify the image's tag, you can follow the command below:
 
 ```shell
-helm install cni-plugins/veth -n kube-system . \
---set image.tag=v0.1.1
+helm install cni-meta-plugins/veth -n kube-system . \
+--set image.tag=v0.1.2
 ```
 
 -----------------------------

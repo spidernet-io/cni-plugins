@@ -22,7 +22,7 @@ type PluginConf struct {
 	// RpFilter
 	DelDefaultRoute4        *bool  `json:"delDefaultRoute4,omitempty"`
 	DelDefaultRoute6        *bool  `json:"delDefaultRoute6,omitempty"`
-	DefaultOverlayInterface string `json:"default_overlay_interface,omitempty"`
+	DefaultOverlayInterface string `json:"defaultOverlayInterface,omitempty"`
 	// RpFilter
 	RPFilter *ty.RPFilter `json:"rp_filter,omitempty"`
 	Skipped  bool         `json:"skip_call,omitempty"`

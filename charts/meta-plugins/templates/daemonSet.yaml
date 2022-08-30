@@ -5,7 +5,7 @@ metadata:
   name: kube-{{ .Chart.Name }}-ds
   namespace: kube-system
   labels:
-    {{- include "plugins.labels" . | nindent 4 }}
+    {{- include "meta-plugins.labels" . | nindent 4 }}
 {{- if .Values.annotations }}
   anotations:
     {{ toYaml .Values.instances.arp.ipAddressPools | indent 2 }}
@@ -21,7 +21,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "plugins.labels" . | nindent 8 }}
+        {{- include "meta-plugins.labels" . | nindent 8 }}
         app: plugins
     spec:
       hostNetwork: true
