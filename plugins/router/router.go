@@ -14,6 +14,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"k8s.io/utils/pointer"
+	"net"
 	"os"
 	"path/filepath"
 )
@@ -107,11 +108,9 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	// hijack overlay response packet to overlay interface
-	// if err := hijackOverlayResponseRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
-	//	return fmt.Errorf("%s failed hijackOverlayResponseRoute: %v", logPrefix, err)
-	// }
-	hijackOverlayResponseRoute(netns, conf, enableIpv4, enableIpv6)
-
+	if err := hijackOverlayResponseRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
+		return fmt.Errorf("%s failed hijackOverlayResponseRoute: %v", logPrefix, err)
+	}
 	fmt.Fprintf(os.Stderr, "%s succeeded to hijack Overlay Response Route \n", logPrefix)
 
 	// add route in pod: hostIP via DefaultOverlayInterface
@@ -287,11 +286,14 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 				return err
 			}
 			// delete original default
-			if err = netlink.RouteDel(&route); err != nil {
-				fmt.Fprintf(os.Stderr, "%s [welan wrong2 ]route: %+v \n", logPrefix, route)
+			// if err = netlink.RouteDel(&route); err != nil {
+			// 	fmt.Fprintf(os.Stderr, "%s [welan wrong2 ]route: %+v \n", logPrefix, route)
+			//
+			// 	return err
+			// }
+			// failed to delete !!!!!!!!!!
+			netlink.RouteDel(&route)
 
-				return err
-			}
 			// set new default for main
 			if err = netlink.RouteAdd(modifiedMainDefaultRoute); err != nil {
 				fmt.Fprintf(os.Stderr, "%s [welan wrong3 ]route: %+v \n", logPrefix, modifiedMainDefaultRoute)
@@ -326,6 +328,11 @@ func addRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool
 		return err
 	}
 
+	netIP := net.ParseIP(hostIPs)
+	dst := net.IPNet{
+		IP: netIP,
+	}
+
 	err = netns.Do(func(_ ns.NetNS) error {
 
 		// add route in pod: hostIP via DefaultOverlayInterface
@@ -343,6 +350,7 @@ func addRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool
 			if err = netlink.RouteAdd(&netlink.Route{
 				LinkIndex: link.Attrs().Index,
 				Scope:     netlink.SCOPE_LINK,
+				Gw:        dst,
 				Dst:       &route.Dst,
 			}); err != nil && err.Error() != "file exists" {
 				return err
@@ -420,3 +428,4 @@ func hijackOverlayResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, en
 	}
 	return nil
 }
+
