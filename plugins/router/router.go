@@ -245,7 +245,7 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 
 			// get generated default Route for new table
 			for _, v := range route.MultiPath {
-				if v.LinkIndex == route.LinkIndex {
+				if v.LinkIndex == link.Attrs().Index {
 					generatedRoute = &netlink.Route{
 						LinkIndex: route.LinkIndex,
 						Gw:        v.Gw,
@@ -260,7 +260,7 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 			}
 			// get generated default Route for main table
 			for _, v := range route.MultiPath {
-				if v.LinkIndex != route.LinkIndex {
+				if v.LinkIndex != link.Attrs().Index {
 					modifiedMainDefaultRoute = &netlink.Route{
 						LinkIndex: route.LinkIndex,
 						Gw:        v.Gw,
