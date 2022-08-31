@@ -128,27 +128,37 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	}
 	// value must be 0/1/2
 	// If not, giving default value: RPFilter_Loose(2) to it
-	if conf.RPFilter != nil {
-		if conf.RPFilter.Enable != nil && *conf.RPFilter.Enable {
-			if conf.RPFilter.Value != nil {
-				matched := false
-				for _, value := range []int32{0, 1, 2} {
-					if *conf.RPFilter.Value == value {
-						matched = true
-					}
-				}
-				if !matched {
-					conf.RPFilter.Value = pointer.Int32(2)
-				}
-			} else {
-				conf.RPFilter.Value = pointer.Int32(2)
-			}
-		}
-	} else {
+	if conf.RPFilter == nil {
 		// give default value: RPFilter_Loose(2)
 		conf.RPFilter = &ty.RPFilter{
 			Enable: pointer.Bool(true),
 			Value:  pointer.Int32(2),
+		}
+	}
+	if conf.RPFilter != nil {
+		if conf.RPFilter.Enable == nil {
+			// give default value: RPFilter_Loose(2)
+			conf.RPFilter = &ty.RPFilter{
+				Enable: pointer.Bool(true),
+				Value:  pointer.Int32(2),
+			}
+		}
+		if conf.RPFilter.Enable != nil {
+			if *conf.RPFilter.Enable {
+				if conf.RPFilter.Value != nil {
+					matched := false
+					for _, value := range []int32{0, 1, 2} {
+						if *conf.RPFilter.Value == value {
+							matched = true
+						}
+					}
+					if !matched {
+						conf.RPFilter.Value = pointer.Int32(2)
+					}
+				} else {
+					conf.RPFilter.Value = pointer.Int32(2)
+				}
+			}
 		}
 	}
 

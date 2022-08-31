@@ -6,6 +6,7 @@ import (
 	"github.com/containernetworking/plugins/pkg/utils/sysctl"
 	"github.com/spidernet-io/cni-plugins/pkg/types"
 	"github.com/vishvananda/netlink"
+	"k8s.io/utils/pointer"
 	"net"
 	"os"
 	"regexp"
@@ -103,15 +104,14 @@ func IsInSubnet(netIP net.IP, subnet net.IPNet) bool {
 // SysctlRPFilter set rp_filter value
 func SysctlRPFilter(netns ns.NetNS, rp *types.RPFilter) error {
 	var err error
-	// set host rp_filter
-	if *rp.Enable {
-		if err = setRPFilter(*rp.Value); err != nil {
+	if rp.Enable != nil && *rp.Enable {
+		if err = setRPFilter(rp.Value); err != nil {
 			return err
 		}
 	}
 	// set pod rp_filter
 	err = netns.Do(func(_ ns.NetNS) error {
-		if err := setRPFilter(*rp.Value); err != nil {
+		if err := setRPFilter(rp.Value); err != nil {
 			return err
 		}
 		return nil
@@ -123,7 +123,10 @@ func SysctlRPFilter(netns ns.NetNS, rp *types.RPFilter) error {
 }
 
 // setRPFilter set rp_filter parameters
-func setRPFilter(v int32) error {
+func setRPFilter(v *int32) error {
+	if v == nil {
+		v = pointer.Int32(2)
+	}
 	dirs, err := os.ReadDir(sysctlConfPath)
 	if err != nil {
 		return fmt.Errorf("[veth]failed to set rp_filter: %v", err)
