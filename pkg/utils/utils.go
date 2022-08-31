@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	ct "github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/containernetworking/plugins/pkg/utils/sysctl"
 	"github.com/spidernet-io/cni-plugins/pkg/types"
@@ -197,4 +198,35 @@ func EnableIpv6Sysctl(netns ns.NetNS, DefaultOverlayInterface string) error {
 		return nil
 	})
 	return err
+}
+
+// set ip rule : to Subnet table $routeTable
+func HijackCustomSubnet(netns ns.NetNS, routes []*ct.Route, routeTable int, enableIpv4, enableIpv6 bool) error {
+	e := netns.Do(func(_ ns.NetNS) error {
+		for _, route := range routes {
+
+			var family int
+			if route.Dst.IP.To4() != nil {
+				if !enableIpv4 {
+					continue
+				}
+				family = netlink.FAMILY_V4
+			} else {
+				if !enableIpv6 {
+					continue
+				}
+				family = netlink.FAMILY_V6
+			}
+
+			rule := netlink.NewRule()
+			rule.Dst = &(route.Dst)
+			rule.Family = family
+			rule.Table = routeTable
+			if err := netlink.RuleAdd(rule); err != nil {
+				return fmt.Errorf("failed to set ip rule(%+v rule.Dst %v): %+v", rule, rule.Dst, err)
+			}
+		}
+		return nil
+	})
+	return e
 }

@@ -119,7 +119,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	// add route in pod: custom subnet via DefaultOverlayInterface:  overlay subnet / clusterip subnet ...custom route
-	if err := hijackCustomSubnet(netns, conf, enableIpv4, enableIpv6); err != nil {
+	if err := utils.HijackCustomSubnet(netns, conf.Routes, overlayRouteTable, enableIpv4, enableIpv6); err != nil {
 		return fmt.Errorf("%s failed to add custom subnet rule: %v", logPrefix, err)
 	}
 
@@ -407,43 +407,6 @@ func hijackOverlayResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, en
 				return err
 			}
 		}
-	}
-	return nil
-}
-
-func hijackCustomSubnet(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool) error {
-	e := netns.Do(func(_ ns.NetNS) error {
-		for _, route := range conf.Routes {
-			fmt.Fprintf(os.Stderr, "%s [welan 10 ] route: %+v \n", logPrefix, route)
-
-			family := netlink.FAMILY_V4
-			if route.Dst.IP.To4() != nil {
-				if !enableIpv4 {
-					continue
-				}
-				family = netlink.FAMILY_V4
-			} else {
-				if !enableIpv6 {
-					continue
-				}
-				family = netlink.FAMILY_V6
-			}
-
-			rule := netlink.NewRule()
-			rule.Dst = &(route.Dst)
-			rule.Family = family
-			rule.Table = overlayRouteTable
-
-			fmt.Fprintf(os.Stderr, "%s [welan 11 ] rule: %+v , to %v\n", logPrefix, rule, rule.Dst)
-			if err := netlink.RuleAdd(rule); err != nil {
-				fmt.Fprintf(os.Stderr, "%s [welan 12 ] failed to add rule: %+v .to %v\n", logPrefix, rule, rule.Dst)
-				return err
-			}
-		}
-		return nil
-	})
-	if e != nil {
-		e = nil
 	}
 	return nil
 }
