@@ -107,9 +107,11 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	// hijack overlay response packet to overlay interface
-	if err := hijackOverlayResponseRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
-		return fmt.Errorf("%s failed hijackOverlayResponseRoute: %v", logPrefix, err)
-	}
+	// if err := hijackOverlayResponseRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
+	//	return fmt.Errorf("%s failed hijackOverlayResponseRoute: %v", logPrefix, err)
+	// }
+	hijackOverlayResponseRoute(netns, conf, enableIpv4, enableIpv6)
+
 	fmt.Fprintf(os.Stderr, "%s succeeded to hijack Overlay Response Route \n", logPrefix)
 
 	// add route in pod: hostIP via DefaultOverlayInterface
