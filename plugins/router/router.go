@@ -12,6 +12,7 @@ import (
 	ty "github.com/spidernet-io/cni-plugins/pkg/types"
 	"github.com/spidernet-io/cni-plugins/pkg/utils"
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 	"k8s.io/utils/pointer"
 	"os"
 	"path/filepath"
@@ -103,18 +104,19 @@ func cmdAdd(args *skel.CmdArgs) error {
 		}
 	}
 
-	// add route in pod: hostIP via DefaultOverlayInterface
-	// add route in pod: custom subnet via DefaultOverlayInterface:  overlay subnet / clusterip subnet ...custom route
-	if err := addRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
-		return fmt.Errorf("%s failed to add route: %v", logPrefix, err)
-	}
-	fmt.Fprintf(os.Stderr, "%s succeeded to add route for chained interface %s \n", logPrefix, preInterfaceName)
-
 	// hijack overlay response packet to overlay interface
 	if err := hijackOverlayResponseRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
 		return fmt.Errorf("%s failed hijackOverlayResponseRoute: %v", logPrefix, err)
 	}
 	fmt.Fprintf(os.Stderr, "%s succeeded to hijack Overlay Response Route \n", logPrefix)
+
+	// add route in pod: hostIP via DefaultOverlayInterface
+	// add route in pod: custom subnet via DefaultOverlayInterface:  overlay subnet / clusterip subnet ...custom route
+	if err := addRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
+		return fmt.Errorf("%s failed to add route: %v", logPrefix, err)
+	}
+
+	fmt.Fprintf(os.Stderr, "%s succeeded to add route for chained interface %s \n", logPrefix, preInterfaceName)
 
 	// 4. setup sysctl rp_filter
 	if err = utils.SysctlRPFilter(netns, conf.RPFilter); err != nil {
@@ -225,15 +227,18 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 	for _, route := range routes {
 		// in order to add route-rule table, we should add rule route table before removing the default route
 		// make sure table-100 exist
-		route.Table = overlayRouteTable
-		if err = netlink.RouteAdd(&route); err != nil {
-			return err
+		if route.Table != unix.RT_TABLE_MAIN {
+			continue
 		}
 		// clean default route in main table but keep 169.254.1.1
 		if route.Dst == nil {
 			if err = netlink.RouteDel(&route); err != nil {
 				return err
 			}
+		}
+		route.Table = overlayRouteTable
+		if err = netlink.RouteAdd(&route); err != nil {
+			return err
 		}
 	}
 	return err
@@ -298,17 +303,12 @@ func addRouteRule(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool)
 			if addr.IP.To16() != nil && !enableIpv6 {
 				continue
 			}
-			for _, route := range conf.Routes {
-				if utils.IsInSubnet(addr.IP, route.Dst) {
-					rule := netlink.NewRule()
-					rule.Table = overlayRouteTable
-					rule.Src = &route.Dst
-					if err = netlink.RuleAdd(rule); err != nil {
-						return err
-					}
-				}
+			rule := netlink.NewRule()
+			rule.Table = overlayRouteTable
+			rule.Src = addr.IPNet
+			if err = netlink.RuleAdd(rule); err != nil {
+				return err
 			}
-
 		}
 		// we should add rule route table, just like `ip route add default via 169.254.1.1 table 100`
 		// but we don't know what's the default route If it has been deleted.

@@ -6,6 +6,7 @@ require (
 	github.com/containernetworking/cni v1.1.2
 	github.com/containernetworking/plugins v1.1.1
 	github.com/vishvananda/netlink v1.1.1-0.20210330154013-f5de75959ad5
+	golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab
 	k8s.io/utils v0.0.0-20220823124924-e9cbc92d1a73
 )
 
@@ -15,5 +16,4 @@ require (
 	github.com/onsi/gomega v1.20.0 // indirect
 	github.com/safchain/ethtool v0.0.0-20210803160452-9aa261dae9b1 // indirect
 	github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f // indirect
-	golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab // indirect
 )
