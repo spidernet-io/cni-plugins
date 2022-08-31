@@ -154,7 +154,7 @@ func setRPFilter(v *int32) error {
 }
 
 // isSkipped returns true by checking if the veth0  exists in the container
-func IsFirstInterface(netns ns.NetNS, intefaceName string) (bool, error) {
+func CheckInterfaceMiss(netns ns.NetNS, intefaceName string) (bool, error) {
 	e := netns.Do(func(_ ns.NetNS) error {
 		_, err := netlink.LinkByName(intefaceName)
 		return err
@@ -165,9 +165,11 @@ func IsFirstInterface(netns ns.NetNS, intefaceName string) (bool, error) {
 	// 	return false, e
 	// }
 	if e == nil {
-		return true, nil
-	} else {
+		// exist inteface, so
 		return false, nil
+	} else {
+		// miss
+		return true, nil
 	}
 }
 

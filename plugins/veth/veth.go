@@ -110,7 +110,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	// Check if the veth-plugin has been executed
 	// if so, skip it
-	firstInterfaceBool, e := utils.IsFirstInterface(netns, defaultConVeth)
+	firstInterfaceBool, e := utils.CheckInterfaceMiss(netns, defaultConVeth)
 	if e != nil {
 		return fmt.Errorf("%s failed to check first veth interface: %v", logPrefix, e)
 	}
