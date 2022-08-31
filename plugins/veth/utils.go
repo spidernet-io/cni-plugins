@@ -5,16 +5,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/vishvananda/netlink"
 	"net"
 )
 
 var defaultMtu = 1500
-
-// the interface added by this plugin
-var defaultConVeth = "veth0"
 
 // getChainedInterfaceIps return all ip addresses on the NIC of a given netns, including ipv4 and ipv6
 func getChainedInterfaceIps(netns ns.NetNS, interfacenName string) ([]string, error) {
@@ -138,25 +134,6 @@ func filterIPs(netIP net.IP, ipv4, ipv6 bool, viaIps []string) (bool, bool, []st
 // getHostVethName select the first 11 characters of the containerID for the host veth.
 func getHostVethName(containerID string) string {
 	return fmt.Sprintf("veth%s", containerID[:min(len(containerID))])
-}
-
-// isSkipped returns true by checking if the veth0  exists in the container
-func isFirstInterface(netns ns.NetNS) (bool,error) {
-	e := netns.Do(func(_ ns.NetNS) error {
-		_, err := netlink.LinkByName(defaultConVeth)
-		return err
-		if err != nil && err == ip.ErrLinkNotFound {
-			return ip.ErrLinkNotFound
-		}
-		return nil
-	})
-	if e==ip.ErrLinkNotFound {
-		return true, nil
-	}else if e!=nil {
-		return false,nil
-	}else{
-		return false, e
-	}
 }
 
 func min(len int) int {
