@@ -358,7 +358,7 @@ func addRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool
 				return err
 			}
 		}
-		return err
+		return nil
 	})
 	return err
 }
