@@ -2,7 +2,6 @@ package utils
 
 import (
 	"fmt"
-	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/containernetworking/plugins/pkg/utils/sysctl"
 	"github.com/spidernet-io/cni-plugins/pkg/types"
@@ -160,10 +159,15 @@ func IsFirstInterface(netns ns.NetNS, intefaceName string) (bool, error) {
 		_, err := netlink.LinkByName(intefaceName)
 		return err
 	})
-	if e == ip.ErrLinkNotFound || e == nil {
+	// if e == ip.ErrLinkNotFound || e == nil {
+	// 	return true, nil
+	// } else {
+	// 	return false, e
+	// }
+	if e == nil {
 		return true, nil
 	} else {
-		return false, e
+		return false, nil
 	}
 }
 
