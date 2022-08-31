@@ -103,15 +103,23 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	// Check if the veth-plugin has been executed
 	// if so, skip it
-	if isSkipped(netns) {
-		fmt.Fprintf(os.Stderr, "%s veth interface %s has been inserted in pod network namespace, finish\n", logPrefix, defaultConVeth)
-		return types.PrintResult(conf.PrevResult, conf.CNIVersion)
+	firstInterfaceBool , e :=isFirstInterface(netns)
+	if e!=nil {
+		return fmt.Errorf("%s failed to check first veth interface: %v", logPrefix, e)
 	}
 
 	// 1. setup veth pair
-	hostInterface, conInterface, err := setupVeth(netns, args.ContainerID, prevResult)
-	if err != nil {
-		return fmt.Errorf("%s failed to setupVeth: %v", logPrefix, err)
+	var hostInterface *current.Interface
+	var conInterface *current.Interface
+	if firstInterfaceBool {
+		var err error
+		hostInterface, conInterface, err = setupVeth(netns, args.ContainerID, prevResult)
+		if err != nil {
+			return fmt.Errorf("%s failed to setupVeth: %v", logPrefix, err)
+		}
+		fmt.Fprintf(os.Stderr, "%s succeeded to add first veth interface %s \n", logPrefix, defaultConVeth)
+	}else{
+		fmt.Fprintf(os.Stderr, "%s ingore to setup veth interface %s \n", logPrefix, defaultConVeth)
 	}
 
 	// get all ips on the node
@@ -129,19 +137,21 @@ func cmdAdd(args *skel.CmdArgs) error {
 	fmt.Fprintf(os.Stderr, "%s get ip of chained interface %s : %v \n", logPrefix, preInterfaceName, conIPs)
 
 	// 2. setup neighborhood
-	if err = setupNeighborhood(netns, hostInterface, conInterface, hostIPs, conIPs, args.ContainerID); err != nil {
+	if err = setupNeighborhood(netns, hostInterface, conInterface, hostIPs, conIPs, args.ContainerID, firstInterfaceBool); err != nil {
 		return fmt.Errorf("%s failed to setup neighbor: %v", logPrefix, err)
 	}
 
 	// 3. setup routes
-	if err = setupRoutes(netns, hostInterface, conInterface, hostIPs, conIPs, conf.Routes); err != nil {
+	if err = setupRoutes(netns, hostInterface, conInterface, hostIPs, conIPs, conf.Routes , firstInterfaceBool ); err != nil {
 		return fmt.Errorf("%s failed to setup route: %v", logPrefix, err)
 	}
 
 	// 4. setup sysctl rp_filter
-	if err = utils.SysctlRPFilter(netns, conf.RPFilter); err != nil {
+	if err = utils.SysctlRPFilter(netns, conf.RPFilter  ); err != nil {
 		return fmt.Errorf("%s failed to setup sysctl: %v", logPrefix, err)
 	}
+
+	// TODO: for multiple macvlan interfaces, maybe need add "ip rule" for second interface
 
 	fmt.Fprintf(os.Stderr, "%s succeeded to add veth interface for chained interface %s \n", logPrefix, preInterfaceName)
 	return types.PrintResult(conf.PrevResult, conf.CNIVersion)
@@ -244,11 +254,15 @@ func setupVeth(netns ns.NetNS, containerID string, pr *current.Result) (*current
 
 // setupNeighborhood setup neighborhood tables for pod and host.
 // equivalent to: `ip neigh add ....`
-func setupNeighborhood(netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, containerID string) error {
+func setupNeighborhood(netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, containerID string , firstInterfaceBool bool) error {
 	var err error
 	// set neighborhood on host
 	if err = neighborAdd(hostInterface.Name, chainedInterface.Mac, conIPs); err != nil {
 		return err
+	}
+
+	if !firstInterfaceBool {
+		return nil
 	}
 
 	// set up neighborhood in pod
@@ -283,11 +297,15 @@ func setupNeighborhood(netns ns.NetNS, hostInterface, chainedInterface *current.
 
 // setupRoutes setup routes for pod and host
 // equivalent to: `ip route add $route`
-func setupRoutes(netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, routes []*types.Route) error {
+func setupRoutes(netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, routes []*types.Route , firstInterfaceBool bool ) error {
 	var err error
 	// set routes for host
 	if err = utils.RouteAdd(hostInterface.Name, conIPs); err != nil {
 		return err
+	}
+
+	if !firstInterfaceBool {
+		return nil
 	}
 
 	// set routes for pod

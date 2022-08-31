@@ -102,7 +102,7 @@ func IsInSubnet(netIP net.IP, subnet net.IPNet) bool {
 }
 
 // SysctlRPFilter set rp_filter value
-func SysctlRPFilter(netns ns.NetNS, rp *types.RPFilter) error {
+func SysctlRPFilter(netns ns.NetNS, rp *types.RPFilter ) error {
 	var err error
 	if rp.Enable != nil && *rp.Enable {
 		if err = setRPFilter(rp.Value); err != nil {

@@ -141,21 +141,22 @@ func getHostVethName(containerID string) string {
 }
 
 // isSkipped returns true by checking if the veth0  exists in the container
-func isSkipped(netns ns.NetNS) bool {
-	skipped := false
+func isFirstInterface(netns ns.NetNS) (bool,error) {
 	e := netns.Do(func(_ ns.NetNS) error {
 		_, err := netlink.LinkByName(defaultConVeth)
+		return err
 		if err != nil && err == ip.ErrLinkNotFound {
-			skipped = true
-			return nil
+			return ip.ErrLinkNotFound
 		}
 		return nil
 	})
-	if e != nil {
-		fmt.Printf("error, failed to check link status, detail=%+v \n", e)
+	if e==ip.ErrLinkNotFound {
+		return true, nil
+	}else if e!=nil {
+		return false,nil
+	}else{
+		return false, e
 	}
-
-	return skipped
 }
 
 func min(len int) int {
