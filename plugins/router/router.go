@@ -412,7 +412,7 @@ func hijackOverlayResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, en
 }
 
 func hijackCustomSubnet(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool) error {
-	err := netns.Do(func(_ ns.NetNS) error {
+	e := netns.Do(func(_ ns.NetNS) error {
 		for _, route := range conf.Routes {
 			if route.Dst.IP.To4() != nil && !enableIpv4 {
 				continue
@@ -430,5 +430,8 @@ func hijackCustomSubnet(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6
 		}
 		return nil
 	})
+	if e != nil {
+		e = nil
+	}
 	return nil
 }
