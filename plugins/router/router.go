@@ -114,7 +114,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	fmt.Fprintf(os.Stderr, "%s succeeded to hijack Overlay Response Route \n", logPrefix)
 
 	// add route in pod: hostIP via DefaultOverlayInterface
-	if err := addRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
+	if err := addHostIPRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
 		return fmt.Errorf("%s failed to add route: %v", logPrefix, err)
 	}
 
@@ -232,7 +232,6 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 	}
 
 	for _, route := range routes {
-		fmt.Fprintf(os.Stderr, "%s [welan] route: %+v \n", logPrefix, route)
 
 		// in order to add route-rule table, we should add rule route table before removing the default route
 		// make sure table-100 exist
@@ -246,12 +245,9 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 			if len(route.MultiPath) == 0 {
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "%s [welan 2 ] route MultiPath : %+v , link.Attrs().Index =%v \n", logPrefix, route.MultiPath, link.Attrs().Index)
 
 			// get generated default Route for new table
 			for _, v := range route.MultiPath {
-				fmt.Fprintf(os.Stderr, "%s [welan 2.5 ] route route : %+v  \n", logPrefix, v)
-
 				if v.LinkIndex == link.Attrs().Index {
 					generatedRoute = &netlink.Route{
 						LinkIndex: route.LinkIndex,
@@ -279,16 +275,11 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 				}
 			}
 
-			fmt.Fprintf(os.Stderr, "%s [welan 3 ] route generatedRoute : %+v \n", logPrefix, generatedRoute)
-			fmt.Fprintf(os.Stderr, "%s [welan 3 ] route modifiedMainDefaultRoute : %+v \n", logPrefix, modifiedMainDefaultRoute)
-			fmt.Fprintf(os.Stderr, "%s [welan 3 ] route delete route : %+v \n", logPrefix, route)
-
 			// add to new table
 			if err = netlink.RouteAdd(generatedRoute); err != nil {
-				fmt.Fprintf(os.Stderr, "%s [welan wrong1 ]route: %+v \n", logPrefix, generatedRoute)
-
-				return err
+				return fmt.Errorf("failed to move overlay route (%+v) to new table: %+v", generatedRoute, err)
 			}
+
 			// delete original default
 			// if err = netlink.RouteDel(&route); err != nil {
 			// 	fmt.Fprintf(os.Stderr, "%s [welan wrong2 ]route: %+v \n", logPrefix, route)
@@ -300,31 +291,25 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 
 			// set new default for main
 			if err = netlink.RouteAdd(modifiedMainDefaultRoute); err != nil {
-				fmt.Fprintf(os.Stderr, "%s [welan wrong3 ]route: %+v \n", logPrefix, modifiedMainDefaultRoute)
-
-				return err
+				return fmt.Errorf("failed to set new default route (%+v) in main table: %+v", modifiedMainDefaultRoute, err)
 			}
 		} else {
 			// clean default route in main table but keep 169.254.1.1
 			if route.Dst == nil {
 				if err = netlink.RouteDel(&route); err != nil {
-					fmt.Fprintf(os.Stderr, "%s [welan wrong4 ]route: %+v \n", logPrefix, route)
-
-					return err
+					return fmt.Errorf("failed to delete default route (%+v) in main table: %+v", route, err)
 				}
 			}
 			route.Table = overlayRouteTable
 			if err = netlink.RouteAdd(&route); err != nil {
-				fmt.Fprintf(os.Stderr, "%s [welan wrong5 ]route: %+v \n", logPrefix, route)
-
-				return err
+				return fmt.Errorf("failed to add route (%+v) to new table: %+v", route, err)
 			}
 		}
 	}
 	return err
 }
 
-func addRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool) error {
+func addHostIPRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool) error {
 	var err error
 
 	hostIPs, err := utils.GetHostIps()
