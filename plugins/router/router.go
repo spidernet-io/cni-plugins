@@ -328,15 +328,11 @@ func addRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool
 		return err
 	}
 
-	netIP := net.ParseIP(hostIPs)
-	dst := net.IPNet{
-		IP: netIP,
-	}
-
 	err = netns.Do(func(_ ns.NetNS) error {
 
+		var dst4, dst6 *net.IPNet
 		// add route in pod: hostIP via DefaultOverlayInterface
-		if err = utils.RouteAdd(conf.DefaultOverlayInterface, hostIPs, enableIpv4, enableIpv6); err != nil {
+		if dst4, dst6, err = utils.RouteAdd(conf.DefaultOverlayInterface, hostIPs, enableIpv4, enableIpv6); err != nil {
 			return err
 		}
 
@@ -347,10 +343,16 @@ func addRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool
 		}
 
 		for _, route := range conf.Routes {
+
+			dst := *dst6
+			if route.Dst.IP.To4() != nil {
+				dst = *dst4
+			}
+
 			if err = netlink.RouteAdd(&netlink.Route{
 				LinkIndex: link.Attrs().Index,
 				Scope:     netlink.SCOPE_LINK,
-				Gw:        dst,
+				Gw:        dst.IP,
 				Dst:       &route.Dst,
 			}); err != nil && err.Error() != "file exists" {
 				return err
@@ -428,4 +430,3 @@ func hijackOverlayResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, en
 	}
 	return nil
 }
-

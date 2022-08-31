@@ -299,7 +299,7 @@ func setupNeighborhood(netns ns.NetNS, hostInterface, chainedInterface *current.
 func setupRoutes(netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, routes []*types.Route, firstInterfaceBool, enableIpv4, enableIpv6 bool) error {
 	var err error
 	// set routes for host
-	if err = utils.RouteAdd(hostInterface.Name, conIPs, enableIpv4, enableIpv6); err != nil {
+	if _, _, err = utils.RouteAdd(hostInterface.Name, conIPs, enableIpv4, enableIpv6); err != nil {
 		return err
 	}
 
@@ -311,7 +311,7 @@ func setupRoutes(netns ns.NetNS, hostInterface, chainedInterface *current.Interf
 	err = netns.Do(func(_ ns.NetNS) error {
 		// add host ip route
 		// equiva to "ip r add hostIP dev veth"
-		if err = utils.RouteAdd(chainedInterface.Name, hostIPs, enableIpv4, enableIpv6); err != nil {
+		if _, _, err = utils.RouteAdd(chainedInterface.Name, hostIPs, enableIpv4, enableIpv6); err != nil {
 			return err
 		}
 

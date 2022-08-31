@@ -71,10 +71,10 @@ func GetHostIps() ([]string, error) {
 }
 
 // RouteAdd add route tables
-func RouteAdd(iface string, ips []string, enableIpv4 bool, enableIpv6 bool) error {
+func RouteAdd(iface string, ips []string, enableIpv4 bool, enableIpv6 bool) (dst4 *net.IPNet, dst6 *net.IPNet, e error) {
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	for _, ip := range ips {
 		netIP := net.ParseIP(ip)
@@ -86,11 +86,13 @@ func RouteAdd(iface string, ips []string, enableIpv4 bool, enableIpv6 bool) erro
 				continue
 			}
 			dst.Mask = net.CIDRMask(32, 32)
+			dst4 = dst
 		} else {
 			if !enableIpv6 {
 				continue
 			}
 			dst.Mask = net.CIDRMask(128, 128)
+			dst6 = dst
 		}
 
 		if err = netlink.RouteAdd(&netlink.Route{
@@ -98,10 +100,10 @@ func RouteAdd(iface string, ips []string, enableIpv4 bool, enableIpv6 bool) erro
 			Scope:     netlink.SCOPE_LINK,
 			Dst:       dst,
 		}); err != nil && err.Error() != ErrFileExists {
-			return err
+			return nil, nil, err
 		}
 	}
-	return nil
+	return dst4, dst6, nil
 }
 
 func IsInSubnet(netIP net.IP, subnet net.IPNet) bool {
