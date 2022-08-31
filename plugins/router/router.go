@@ -38,6 +38,8 @@ func main() {
 	skel.PluginMain(cmdAdd, cmdCheck, cmdDel, version.All, bv.BuildString(binName))
 }
 
+var logPrefix string
+
 func cmdAdd(args *skel.CmdArgs) error {
 
 	conf, err := parseConfig(args.StdinData)
@@ -49,7 +51,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	if err = types.LoadArgs(args.Args, &k8sArgs); nil != err {
 		return fmt.Errorf("failed to get pod information, error=%+v \n", err)
 	}
-	logPrefix := fmt.Sprintf("[ plugin=%s podNamespace=%s, podName=%s, containerID=%s ]", binName, k8sArgs.K8S_POD_NAMESPACE, k8sArgs.K8S_POD_NAME, args.ContainerID)
+	logPrefix = fmt.Sprintf("[ plugin=%s podNamespace=%s, podName=%s, containerID=%s ]", binName, k8sArgs.K8S_POD_NAMESPACE, k8sArgs.K8S_POD_NAME, args.ContainerID)
 
 	// skip plugin
 	if conf.Skipped {
@@ -225,6 +227,8 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 	}
 
 	for _, route := range routes {
+		fmt.Fprintf(os.Stderr, "%s [welan] route: %+v \n", logPrefix, route)
+
 		// in order to add route-rule table, we should add rule route table before removing the default route
 		// make sure table-100 exist
 		if route.Table != unix.RT_TABLE_MAIN {
@@ -232,6 +236,8 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 		}
 		// clean default route in main table but keep 169.254.1.1
 		if route.Dst == nil {
+			fmt.Fprintf(os.Stderr, "%s [welan] default route: %+v \n", logPrefix, route)
+
 			if err = netlink.RouteDel(&route); err != nil {
 				return err
 			}
