@@ -160,7 +160,7 @@ func IsFirstInterface(netns ns.NetNS, intefaceName string) (bool, error) {
 		_, err := netlink.LinkByName(intefaceName)
 		return err
 	})
-	if e == ip.ErrLinkNotFound || e == nill {
+	if e == ip.ErrLinkNotFound || e == nil {
 		return true, nil
 	} else {
 		return false, e
