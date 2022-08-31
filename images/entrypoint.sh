@@ -16,6 +16,8 @@ for BIN in $ALL_BIN ; do
     mv ${HOST_BIN_PATH}/${BIN}  ${HOST_BIN_PATH}/${BIN}.old
   fi
   cp $BIN ${HOST_BIN_PATH}/${BIN}
+  # try to remove if existed, ignore failure if file busy
+  rm -f ${HOST_BIN_PATH}/${BIN}.old &>/dev/null
 done
 
 ls /host/opt/cni/bin
