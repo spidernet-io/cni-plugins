@@ -14,10 +14,8 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"k8s.io/utils/pointer"
-	"net"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 type PluginConf struct {
@@ -116,9 +114,13 @@ func cmdAdd(args *skel.CmdArgs) error {
 	fmt.Fprintf(os.Stderr, "%s succeeded to hijack Overlay Response Route \n", logPrefix)
 
 	// add route in pod: hostIP via DefaultOverlayInterface
-	// add route in pod: custom subnet via DefaultOverlayInterface:  overlay subnet / clusterip subnet ...custom route
 	if err := addRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
 		return fmt.Errorf("%s failed to add route: %v", logPrefix, err)
+	}
+
+	// add route in pod: custom subnet via DefaultOverlayInterface:  overlay subnet / clusterip subnet ...custom route
+	if err := hijackCustomSubnet(netns, conf, enableIpv4, enableIpv6); err != nil {
+		return fmt.Errorf("%s failed to add custom subnet rule: %v", logPrefix, err)
 	}
 
 	fmt.Fprintf(os.Stderr, "%s succeeded to add route for chained interface %s \n", logPrefix, preInterfaceName)
@@ -331,35 +333,11 @@ func addRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool
 	}
 
 	err = netns.Do(func(_ ns.NetNS) error {
-
-		var dst4, dst6 *net.IPNet
 		// add route in pod: hostIP via DefaultOverlayInterface
-		if dst4, dst6, err = utils.RouteAdd(conf.DefaultOverlayInterface, hostIPs, enableIpv4, enableIpv6); err != nil {
+		if _, _, err = utils.RouteAdd(conf.DefaultOverlayInterface, hostIPs, enableIpv4, enableIpv6); err != nil {
 			return err
 		}
 
-		// add route in pod: custom subnet via DefaultOverlayInterface:  overlay subnet / clusterip subnet ...custom route
-		link, err := netlink.LinkByName(conf.DefaultOverlayInterface)
-		if err != nil {
-			return err
-		}
-
-		for _, route := range conf.Routes {
-
-			dst := *dst6
-			if route.Dst.IP.To4() != nil {
-				dst = *dst4
-			}
-
-			if err = netlink.RouteAdd(&netlink.Route{
-				LinkIndex: link.Attrs().Index,
-				Scope:     netlink.SCOPE_LINK,
-				Gw:        dst.IP,
-				Dst:       &route.Dst,
-			}); err != nil && !strings.Contains(err.Error(), "file exists") {
-				return err
-			}
-		}
 		return nil
 	})
 	return err
@@ -431,4 +409,25 @@ func hijackOverlayResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, en
 		}
 	}
 	return nil
+}
+
+func hijackCustomSubnet(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool) error {
+	err := netns.Do(func(_ ns.NetNS) error {
+		for _, route := range conf.Routes {
+			if route.Dst.IP.To4() != nil && !enableIpv4 {
+				continue
+			}
+			if route.Dst.IP.To16() != nil && !enableIpv6 {
+				continue
+			}
+
+			rule := netlink.NewRule()
+			rule.Dst = &route.Dst
+			if err := netlink.RuleAdd(rule); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return err
 }
