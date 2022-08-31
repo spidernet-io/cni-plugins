@@ -241,10 +241,12 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 			if len(route.MultiPath) == 0 {
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "%s [welan 2 ] route MultiPath : %+v \n", logPrefix, route.MultiPath)
+			fmt.Fprintf(os.Stderr, "%s [welan 2 ] route MultiPath : %+v , link.Attrs().Index =%v \n", logPrefix, route.MultiPath, link.Attrs().Index)
 
 			// get generated default Route for new table
 			for _, v := range route.MultiPath {
+				fmt.Fprintf(os.Stderr, "%s [welan 2.5 ] route route : %+v  \n", logPrefix, v)
+
 				if v.LinkIndex == link.Attrs().Index {
 					generatedRoute = &netlink.Route{
 						LinkIndex: route.LinkIndex,
@@ -258,6 +260,7 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 			if generatedRoute == nil {
 				continue
 			}
+
 			// get generated default Route for main table
 			for _, v := range route.MultiPath {
 				if v.LinkIndex != link.Attrs().Index {
