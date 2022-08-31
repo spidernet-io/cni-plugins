@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/containernetworking/plugins/pkg/utils/sysctl"
 	"github.com/spidernet-io/cni-plugins/pkg/types"
@@ -17,7 +18,8 @@ import (
 // var defaultMtu = 1500
 // var defaultConVeth = "veth0"
 var sysctlConfPath = "/proc/sys/net/ipv4/conf"
-var disableIPv6SysctlTemplate = "net/ipv6/conf/%s/disable_ipv6"
+
+// var disableIPv6SysctlTemplate = "net/ipv6/conf/%s/disable_ipv6"
 var ErrFileExists = "file exists"
 
 var DefaultInterfacesToExclude = []string{
@@ -70,7 +72,7 @@ func GetHostIps() ([]string, error) {
 }
 
 // RouteAdd add route tables
-func RouteAdd(iface string, ips []string) error {
+func RouteAdd(iface string, ips []string, enableIpv4 bool, enableIpv6 bool) error {
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
 		return err
@@ -81,8 +83,14 @@ func RouteAdd(iface string, ips []string) error {
 			IP: netIP,
 		}
 		if netIP.To4() != nil {
+			if !enableIpv4 {
+				continue
+			}
 			dst.Mask = net.CIDRMask(32, 32)
 		} else {
+			if !enableIpv6 {
+				continue
+			}
 			dst.Mask = net.CIDRMask(128, 128)
 		}
 
@@ -102,7 +110,7 @@ func IsInSubnet(netIP net.IP, subnet net.IPNet) bool {
 }
 
 // SysctlRPFilter set rp_filter value
-func SysctlRPFilter(netns ns.NetNS, rp *types.RPFilter ) error {
+func SysctlRPFilter(netns ns.NetNS, rp *types.RPFilter) error {
 	var err error
 	if rp.Enable != nil && *rp.Enable {
 		if err = setRPFilter(rp.Value); err != nil {
@@ -144,4 +152,43 @@ func setRPFilter(v *int32) error {
 		}
 	}
 	return nil
+}
+
+// isSkipped returns true by checking if the veth0  exists in the container
+func IsFirstInterface(netns ns.NetNS, intefaceName string) (bool, error) {
+	e := netns.Do(func(_ ns.NetNS) error {
+		_, err := netlink.LinkByName(intefaceName)
+		return err
+	})
+	if e == ip.ErrLinkNotFound {
+		return true, nil
+	} else if e != nil {
+		return false, nil
+	} else {
+		return false, e
+	}
+}
+
+func EnableIpv6Sysctl(netns ns.NetNS, DefaultOverlayInterface string) error {
+	err := netns.Do(func(_ ns.NetNS) error {
+		allConf := []string{
+			fmt.Sprintf("net/ipv6/conf/%s/disable_ipv6", DefaultOverlayInterface),
+			"net/ipv6/conf/all/disable_ipv6",
+		}
+		for _, v := range allConf {
+			// Read current sysctl value
+			value, err := sysctl.Sysctl(v)
+			if err != nil {
+				return err
+			}
+			// make sure value=1
+			if value == "1" {
+				if _, err = sysctl.Sysctl(v, "0"); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	return err
 }

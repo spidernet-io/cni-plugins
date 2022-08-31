@@ -13,7 +13,6 @@ import (
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	bv "github.com/containernetworking/plugins/pkg/utils/buildversion"
-	"github.com/containernetworking/plugins/pkg/utils/sysctl"
 	ty "github.com/spidernet-io/cni-plugins/pkg/types"
 	"github.com/spidernet-io/cni-plugins/pkg/utils"
 	"github.com/vishvananda/netlink"
@@ -26,20 +25,11 @@ import (
 
 type PluginConf struct {
 	types.NetConf
+	// should include: overlay Subnet , clusterip subnet
 	Routes []*types.Route `json:"routes,omitempty"`
 	// RpFilter
 	RPFilter *ty.RPFilter `json:"rp_filter,omitempty"`
 	Skipped  bool         `json:"skip_call,omitempty"`
-}
-
-// K8sArgs is the valid CNI_ARGS used for Kubernetes
-type K8sArgs struct {
-	types.CommonArgs
-	IP                         net.IP
-	K8S_POD_NAME               types.UnmarshallableString //revive:disable-line
-	K8S_POD_NAMESPACE          types.UnmarshallableString //revive:disable-line
-	K8S_POD_INFRA_CONTAINER_ID types.UnmarshallableString //revive:disable-line
-	K8S_POD_UID                types.UnmarshallableString //revive:disable-line
 }
 
 func init() {
@@ -51,6 +41,9 @@ func init() {
 
 var binName = filepath.Base(os.Args[0])
 
+// the interface added by this plugin
+var defaultConVeth = "veth0"
+
 func main() {
 	skel.PluginMain(cmdAdd, cmdCheck, cmdDel, version.All, bv.BuildString(binName))
 }
@@ -61,7 +54,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return err
 	}
 
-	k8sArgs := K8sArgs{}
+	k8sArgs := ty.K8sArgs{}
 	if err = types.LoadArgs(args.Args, &k8sArgs); nil != err {
 		return fmt.Errorf("failed to get pod information, error=%+v \n", err)
 	}
@@ -91,6 +84,20 @@ func cmdAdd(args *skel.CmdArgs) error {
 	if len(preInterfaceName) == 0 {
 		return fmt.Errorf("%s failed to find interface name from prevResult", logPrefix)
 	}
+	enableIpv4 := false
+	enableIpv6 := false
+	if len(prevResult.IPs) == 0 {
+		return fmt.Errorf("%s got no container IPs", logPrefix)
+	} else {
+		for _, v := range prevResult.IPs {
+			if v.Address.IP.To4() != nil {
+				enableIpv4 = true
+			} else {
+				enableIpv6 = true
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "%s enableIpv4=%v, enableIpv6=%v \n", logPrefix, enableIpv4, enableIpv6)
 
 	// Pass the prevResult through this plugin to the next one
 	// result := prevResult
@@ -103,8 +110,8 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	// Check if the veth-plugin has been executed
 	// if so, skip it
-	firstInterfaceBool , e :=isFirstInterface(netns)
-	if e!=nil {
+	firstInterfaceBool, e := utils.IsFirstInterface(netns, defaultConVeth)
+	if e != nil {
 		return fmt.Errorf("%s failed to check first veth interface: %v", logPrefix, e)
 	}
 
@@ -118,7 +125,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 			return fmt.Errorf("%s failed to setupVeth: %v", logPrefix, err)
 		}
 		fmt.Fprintf(os.Stderr, "%s succeeded to add first veth interface %s \n", logPrefix, defaultConVeth)
-	}else{
+	} else {
 		fmt.Fprintf(os.Stderr, "%s ingore to setup veth interface %s \n", logPrefix, defaultConVeth)
 	}
 
@@ -136,18 +143,24 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 	fmt.Fprintf(os.Stderr, "%s get ip of chained interface %s : %v \n", logPrefix, preInterfaceName, conIPs)
 
+	if enableIpv6 {
+		if e := utils.EnableIpv6Sysctl(netns, defaultConVeth); e != nil {
+			return fmt.Errorf("%s failed to enable ipv6 sysctl: %v", logPrefix, err)
+		}
+	}
+
 	// 2. setup neighborhood
 	if err = setupNeighborhood(netns, hostInterface, conInterface, hostIPs, conIPs, args.ContainerID, firstInterfaceBool); err != nil {
 		return fmt.Errorf("%s failed to setup neighbor: %v", logPrefix, err)
 	}
 
 	// 3. setup routes
-	if err = setupRoutes(netns, hostInterface, conInterface, hostIPs, conIPs, conf.Routes , firstInterfaceBool ); err != nil {
+	if err = setupRoutes(netns, hostInterface, conInterface, hostIPs, conIPs, conf.Routes, firstInterfaceBool, enableIpv4, enableIpv6); err != nil {
 		return fmt.Errorf("%s failed to setup route: %v", logPrefix, err)
 	}
 
 	// 4. setup sysctl rp_filter
-	if err = utils.SysctlRPFilter(netns, conf.RPFilter  ); err != nil {
+	if err = utils.SysctlRPFilter(netns, conf.RPFilter); err != nil {
 		return fmt.Errorf("%s failed to setup sysctl: %v", logPrefix, err)
 	}
 
@@ -254,7 +267,7 @@ func setupVeth(netns ns.NetNS, containerID string, pr *current.Result) (*current
 
 // setupNeighborhood setup neighborhood tables for pod and host.
 // equivalent to: `ip neigh add ....`
-func setupNeighborhood(netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, containerID string , firstInterfaceBool bool) error {
+func setupNeighborhood(netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, containerID string, firstInterfaceBool bool) error {
 	var err error
 	// set neighborhood on host
 	if err = neighborAdd(hostInterface.Name, chainedInterface.Mac, conIPs); err != nil {
@@ -265,7 +278,7 @@ func setupNeighborhood(netns ns.NetNS, hostInterface, chainedInterface *current.
 		return nil
 	}
 
-	// set up neighborhood in pod
+	// set up host veth Interface neighborhood in pod
 	// bug?: sometimes hostveth's mac not be correct, we get hosVeth's mac via LinkByName
 	hostVethLink, err := netlink.LinkByName(getHostVethName(containerID))
 	if err != nil {
@@ -273,22 +286,8 @@ func setupNeighborhood(netns ns.NetNS, hostInterface, chainedInterface *current.
 	}
 	err = netns.Do(func(_ ns.NetNS) error {
 		if err := neighborAdd(defaultConVeth, hostVethLink.Attrs().HardwareAddr.String(), hostIPs); err != nil {
-			ipv6SysctlValueName := fmt.Sprintf("net/ipv6/conf/%s/disable_ipv6", defaultConVeth)
-
-			// Read current sysctl value
-			value, err := sysctl.Sysctl(ipv6SysctlValueName)
-			if err != nil {
-				return err
-			}
-
-			if value != "0" {
-				if _, err = sysctl.Sysctl(ipv6SysctlValueName, "0"); err != nil {
-					return err
-				}
-			}
 			return err
 		}
-
 		return nil
 	})
 
@@ -297,10 +296,10 @@ func setupNeighborhood(netns ns.NetNS, hostInterface, chainedInterface *current.
 
 // setupRoutes setup routes for pod and host
 // equivalent to: `ip route add $route`
-func setupRoutes(netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, routes []*types.Route , firstInterfaceBool bool ) error {
+func setupRoutes(netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, routes []*types.Route, firstInterfaceBool, enableIpv4, enableIpv6 bool) error {
 	var err error
 	// set routes for host
-	if err = utils.RouteAdd(hostInterface.Name, conIPs); err != nil {
+	if err = utils.RouteAdd(hostInterface.Name, conIPs, enableIpv4, enableIpv6); err != nil {
 		return err
 	}
 
@@ -312,7 +311,7 @@ func setupRoutes(netns ns.NetNS, hostInterface, chainedInterface *current.Interf
 	err = netns.Do(func(_ ns.NetNS) error {
 		// add host ip route
 		// equiva to "ip r add hostIP dev veth"
-		if err = utils.RouteAdd(chainedInterface.Name, hostIPs); err != nil {
+		if err = utils.RouteAdd(chainedInterface.Name, hostIPs, enableIpv4, enableIpv6); err != nil {
 			return err
 		}
 
