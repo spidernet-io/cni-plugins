@@ -145,7 +145,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	if enableIpv6 {
 		if err := utils.EnableIpv6Sysctl(netns, defaultConVeth); err != nil {
-			return fmt.Errorf("%s failed to enable ipv6 sysctl: %v", logPrefix, err)
+			return fmt.Errorf("%s failed to enable ipv6 sysctl in pod ns(%v) : %v, firstInterfaceBool=%v", logPrefix, netns, err, firstInterfaceBool)
 		}
 	}
 
