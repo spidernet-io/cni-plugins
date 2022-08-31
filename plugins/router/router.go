@@ -434,8 +434,9 @@ func hijackCustomSubnet(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6
 			rule.Family = family
 			rule.Table = overlayRouteTable
 
-			fmt.Fprintf(os.Stderr, "%s [welan 11 ] rule: %+v \n", logPrefix, rule)
+			fmt.Fprintf(os.Stderr, "%s [welan 11 ] rule: %+v , to %v\n", logPrefix, rule, rule.Dst)
 			if err := netlink.RuleAdd(rule); err != nil {
+				fmt.Fprintf(os.Stderr, "%s [welan 12 ] failed to add rule: %+v .to %v\n", logPrefix, rule, rule.Dst)
 				return err
 			}
 		}
