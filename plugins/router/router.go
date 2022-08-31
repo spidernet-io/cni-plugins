@@ -423,11 +423,12 @@ func hijackCustomSubnet(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6
 
 			rule := netlink.NewRule()
 			rule.Dst = &route.Dst
+			fmt.Fprintf(os.Stderr, "%s [welan 10 ] rule: %+v \n", logPrefix, rule)
 			if err := netlink.RuleAdd(rule); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
-	return err
+	return nil
 }
