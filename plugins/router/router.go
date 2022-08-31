@@ -416,15 +416,23 @@ func hijackCustomSubnet(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6
 		for _, route := range conf.Routes {
 			fmt.Fprintf(os.Stderr, "%s [welan 10 ] route: %+v \n", logPrefix, route)
 
-			if route.Dst.IP.To4() != nil && !enableIpv4 {
-				continue
-			}
-			if route.Dst.IP.To16() != nil && !enableIpv6 {
-				continue
+			family := netlink.FAMILY_V4
+			if route.Dst.IP.To4() != nil {
+				if !enableIpv4 {
+					continue
+				}
+				family = netlink.FAMILY_V4
+			} else {
+				if !enableIpv6 {
+					continue
+				}
+				family = netlink.FAMILY_V6
 			}
 
 			rule := netlink.NewRule()
-			rule.Dst = &route.Dst
+			rule.Dst = &(route.Dst)
+			rule.Family = family
+			rule.Table = overlayRouteTable
 
 			fmt.Fprintf(os.Stderr, "%s [welan 11 ] rule: %+v \n", logPrefix, rule)
 			if err := netlink.RuleAdd(rule); err != nil {
