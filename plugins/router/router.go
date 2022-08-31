@@ -221,13 +221,17 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 	if err != nil {
 		return err
 	}
-	routes, err := netlink.RouteList(link, ipfamily)
+	routes, err := netlink.RouteList(nil, ipfamily)
 	if err != nil {
 		return err
 	}
 
 	for _, route := range routes {
 		fmt.Fprintf(os.Stderr, "%s [welan] route: %+v \n", logPrefix, route)
+
+		if route.LinkIndex != link.Attrs().Index {
+			continue
+		}
 
 		// in order to add route-rule table, we should add rule route table before removing the default route
 		// make sure table-100 exist
