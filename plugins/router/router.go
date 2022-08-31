@@ -229,26 +229,75 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 	for _, route := range routes {
 		fmt.Fprintf(os.Stderr, "%s [welan] route: %+v \n", logPrefix, route)
 
-		if route.LinkIndex != link.Attrs().Index {
-			continue
-		}
-
 		// in order to add route-rule table, we should add rule route table before removing the default route
 		// make sure table-100 exist
 		if route.Table != unix.RT_TABLE_MAIN {
 			continue
 		}
-		// clean default route in main table but keep 169.254.1.1
-		if route.Dst == nil {
-			fmt.Fprintf(os.Stderr, "%s [welan] default route: %+v \n", logPrefix, route)
 
+		if route.LinkIndex != link.Attrs().Index {
+			// especially for ipv6 default gateway
+			var generatedRoute, modifiedMainDefaultRoute *netlink.Route
+			if len(route.MultiPath) == 0 {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "%s [welan 2 ] route MultiPath : %+v \n", logPrefix, route.MultiPath)
+
+			// get generated default Route for new table
+			for _, v := range route.MultiPath {
+				if v.LinkIndex == route.LinkIndex {
+					generatedRoute = &netlink.Route{
+						LinkIndex: route.LinkIndex,
+						Gw:        v.Gw,
+						Table:     overlayRouteTable,
+						MTU:       route.MTU,
+					}
+					break
+				}
+			}
+			if generatedRoute == nil {
+				continue
+			}
+			// get generated default Route for main table
+			for _, v := range route.MultiPath {
+				if v.LinkIndex != route.LinkIndex {
+					modifiedMainDefaultRoute = &netlink.Route{
+						LinkIndex: route.LinkIndex,
+						Gw:        v.Gw,
+						Table:     unix.RT_TABLE_MAIN,
+						MTU:       route.MTU,
+					}
+					break
+				}
+			}
+
+			fmt.Fprintf(os.Stderr, "%s [welan 3 ] route generatedRoute : %+v \n", logPrefix, generatedRoute)
+			fmt.Fprintf(os.Stderr, "%s [welan 3 ] route modifiedMainDefaultRoute : %+v \n", logPrefix, modifiedMainDefaultRoute)
+			fmt.Fprintf(os.Stderr, "%s [welan 3 ] route delete route : %+v \n", logPrefix, route)
+
+			// add to new table
+			if err = netlink.RouteAdd(generatedRoute); err != nil {
+				return err
+			}
+			// delete original default
 			if err = netlink.RouteDel(&route); err != nil {
 				return err
 			}
-		}
-		route.Table = overlayRouteTable
-		if err = netlink.RouteAdd(&route); err != nil {
-			return err
+			// set new default for main
+			if err = netlink.RouteAdd(modifiedMainDefaultRoute); err != nil {
+				return err
+			}
+		} else {
+			// clean default route in main table but keep 169.254.1.1
+			if route.Dst == nil {
+				if err = netlink.RouteDel(&route); err != nil {
+					return err
+				}
+			}
+			route.Table = overlayRouteTable
+			if err = netlink.RouteAdd(&route); err != nil {
+				return err
+			}
 		}
 	}
 	return err
