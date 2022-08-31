@@ -2,7 +2,6 @@ package utils
 
 import (
 	"fmt"
-	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/containernetworking/plugins/pkg/utils/sysctl"
 	"github.com/spidernet-io/cni-plugins/pkg/types"
@@ -155,17 +154,22 @@ func setRPFilter(v *int32) error {
 }
 
 // isSkipped returns true by checking if the veth0  exists in the container
-func IsFirstInterface(netns ns.NetNS, intefaceName string) (bool, error) {
+func CheckInterfaceMiss(netns ns.NetNS, intefaceName string) (bool, error) {
 	e := netns.Do(func(_ ns.NetNS) error {
 		_, err := netlink.LinkByName(intefaceName)
 		return err
 	})
-	if e == ip.ErrLinkNotFound {
-		return true, nil
-	} else if e != nil {
+	// if e == ip.ErrLinkNotFound || e == nil {
+	// 	return true, nil
+	// } else {
+	// 	return false, e
+	// }
+	if e == nil {
+		// exist inteface, so
 		return false, nil
 	} else {
-		return false, e
+		// miss
+		return true, nil
 	}
 }
 

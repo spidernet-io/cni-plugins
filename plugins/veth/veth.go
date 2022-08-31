@@ -110,7 +110,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	// Check if the veth-plugin has been executed
 	// if so, skip it
-	firstInterfaceBool, e := utils.IsFirstInterface(netns, defaultConVeth)
+	firstInterfaceBool, e := utils.CheckInterfaceMiss(netns, defaultConVeth)
 	if e != nil {
 		return fmt.Errorf("%s failed to check first veth interface: %v", logPrefix, e)
 	}
@@ -144,8 +144,8 @@ func cmdAdd(args *skel.CmdArgs) error {
 	fmt.Fprintf(os.Stderr, "%s get ip of chained interface %s : %v \n", logPrefix, preInterfaceName, conIPs)
 
 	if enableIpv6 {
-		if e := utils.EnableIpv6Sysctl(netns, defaultConVeth); e != nil {
-			return fmt.Errorf("%s failed to enable ipv6 sysctl: %v", logPrefix, err)
+		if err := utils.EnableIpv6Sysctl(netns, defaultConVeth); err != nil {
+			return fmt.Errorf("%s failed to enable ipv6 sysctl in pod ns(%v) : %v, firstInterfaceBool=%v", logPrefix, netns, err, firstInterfaceBool)
 		}
 	}
 
