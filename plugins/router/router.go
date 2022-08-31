@@ -293,6 +293,7 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 			if err = netlink.RouteAdd(modifiedMainDefaultRoute); err != nil {
 				return fmt.Errorf("failed to set new default route (%+v) in main table: %+v", modifiedMainDefaultRoute, err)
 			}
+
 		} else {
 			// clean default route in main table but keep 169.254.1.1
 			if route.Dst == nil {
@@ -306,7 +307,8 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 			}
 		}
 	}
-	return err
+
+	return nil
 }
 
 func addHostIPRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool) error {
