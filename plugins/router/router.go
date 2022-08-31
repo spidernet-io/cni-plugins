@@ -280,25 +280,35 @@ func moveOverlayRoute(iface string, ipfamily int) error {
 
 			// add to new table
 			if err = netlink.RouteAdd(generatedRoute); err != nil {
+				fmt.Fprintf(os.Stderr, "%s [welan wrong1 ]route: %+v \n", logPrefix, generatedRoute)
+
 				return err
 			}
 			// delete original default
 			if err = netlink.RouteDel(&route); err != nil {
+				fmt.Fprintf(os.Stderr, "%s [welan wrong2 ]route: %+v \n", logPrefix, route)
+
 				return err
 			}
 			// set new default for main
 			if err = netlink.RouteAdd(modifiedMainDefaultRoute); err != nil {
+				fmt.Fprintf(os.Stderr, "%s [welan wrong3 ]route: %+v \n", logPrefix, modifiedMainDefaultRoute)
+
 				return err
 			}
 		} else {
 			// clean default route in main table but keep 169.254.1.1
 			if route.Dst == nil {
 				if err = netlink.RouteDel(&route); err != nil {
+					fmt.Fprintf(os.Stderr, "%s [welan wrong4 ]route: %+v \n", logPrefix, route)
+
 					return err
 				}
 			}
 			route.Table = overlayRouteTable
 			if err = netlink.RouteAdd(&route); err != nil {
+				fmt.Fprintf(os.Stderr, "%s [welan wrong5 ]route: %+v \n", logPrefix, route)
+
 				return err
 			}
 		}
