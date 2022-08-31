@@ -17,6 +17,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type PluginConf struct {
@@ -354,7 +355,7 @@ func addRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool
 				Scope:     netlink.SCOPE_LINK,
 				Gw:        dst.IP,
 				Dst:       &route.Dst,
-			}); err != nil && err.Error() != "file exists" {
+			}); err != nil && !strings.Contains(err.Error(), "file exists") {
 				return err
 			}
 		}
