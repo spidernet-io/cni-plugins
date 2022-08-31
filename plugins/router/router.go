@@ -98,7 +98,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	// -----------------  Add route table in pod ns
 	if enableIpv6 {
-		if e := utils.EnableIpv6Sysctl(netns, conf.DefaultOverlayInterface); e != nil {
+		if err := utils.EnableIpv6Sysctl(netns, conf.DefaultOverlayInterface); err != nil {
 			return fmt.Errorf("%s failed to enable ipv6 sysctl: %v", logPrefix, err)
 		}
 	}

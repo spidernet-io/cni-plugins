@@ -144,7 +144,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	fmt.Fprintf(os.Stderr, "%s get ip of chained interface %s : %v \n", logPrefix, preInterfaceName, conIPs)
 
 	if enableIpv6 {
-		if e := utils.EnableIpv6Sysctl(netns, defaultConVeth); e != nil {
+		if err := utils.EnableIpv6Sysctl(netns, defaultConVeth); err != nil {
 			return fmt.Errorf("%s failed to enable ipv6 sysctl: %v", logPrefix, err)
 		}
 	}
