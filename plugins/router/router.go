@@ -241,7 +241,7 @@ func moveRouteTable(iface string, ipfamily int) error {
 
 		if route.LinkIndex != link.Attrs().Index {
 			// especially for ipv6 default gateway
-			var generatedRoute, modifiedMainDefaultRoute *netlink.Route
+			var generatedRoute, deletedRoute *netlink.Route
 			if len(route.MultiPath) == 0 {
 				continue
 			}
@@ -255,48 +255,58 @@ func moveRouteTable(iface string, ipfamily int) error {
 						Table:     overlayRouteTable,
 						MTU:       route.MTU,
 					}
+					deletedRoute = &netlink.Route{
+						LinkIndex: route.LinkIndex,
+						Gw:        v.Gw,
+						Table:     unix.RT_TABLE_MAIN,
+					}
 					break
 				}
 			}
 			if generatedRoute == nil {
 				continue
 			}
-
-			// get generated default Route for main table
-			for _, v := range route.MultiPath {
-				if v.LinkIndex != link.Attrs().Index {
-					modifiedMainDefaultRoute = &netlink.Route{
-						LinkIndex: route.LinkIndex,
-						Gw:        v.Gw,
-						Table:     unix.RT_TABLE_MAIN,
-						MTU:       route.MTU,
-					}
-					break
-				}
-			}
-
 			// add to new table
 			if err = netlink.RouteAdd(generatedRoute); err != nil {
 				return fmt.Errorf("failed to move overlay route (%+v) to new table: %+v", generatedRoute, err)
 			}
-
-			// delete original default
-			// if err = netlink.RouteDel(&route); err != nil {
-			// 	fmt.Fprintf(os.Stderr, "%s [welan wrong2 ]route: %+v \n", logPrefix, route)
-			//
-			// 	return err
-			// }
-			// failed to delete !!!!!!!!!!
-			if err := netlink.RouteDel(&route); err != nil {
-				fmt.Fprintf(os.Stderr, "[welan wrong] failed to delete route: %+v / %+v, %+v, %+v, error=%+v \n ", route, route.Dst, route.Gw, route.MultiPath, err)
+			// delete default route in main table
+			if err := netlink.RouteDel(deletedRoute); err != nil {
+				fmt.Fprintf(os.Stderr, "[welan wrong] failed to delete route: %+v / %+v, %+v, %+v, error=%+v \n ", deletedRoute, deletedRoute.Dst, deletedRoute.Gw, deletedRoute.MultiPath, err)
 			}
 
-			// set new default for main
-			if err = netlink.RouteAdd(modifiedMainDefaultRoute); err != nil {
-				// return fmt.Errorf("failed to set new default route (%+v) in main table: %+v", modifiedMainDefaultRoute, err)
-				fmt.Fprintf(os.Stderr, "[welan wrong] failed to set new default route: %+v / %+v, %+v, %+v, error=%+v \n ", modifiedMainDefaultRoute, modifiedMainDefaultRoute.Dst, modifiedMainDefaultRoute.Gw, modifiedMainDefaultRoute.MultiPath, err)
+			/*
+				// get generated default Route for main table
+				for _, v := range route.MultiPath {
+					if v.LinkIndex != link.Attrs().Index {
+						modifiedMainDefaultRoute = &netlink.Route{
+							LinkIndex: route.LinkIndex,
+							Gw:        v.Gw,
+							Table:     unix.RT_TABLE_MAIN,
+							MTU:       route.MTU,
+						}
+						break
+					}
+				}
 
-			}
+				// delete original default
+				// if err = netlink.RouteDel(&route); err != nil {
+				// 	fmt.Fprintf(os.Stderr, "%s [welan wrong2 ]route: %+v \n", logPrefix, route)
+				//
+				// 	return err
+				// }
+				// failed to delete !!!!!!!!!!
+				if err := netlink.RouteDel(&route); err != nil {
+					fmt.Fprintf(os.Stderr, "[welan wrong] failed to delete route: %+v / %+v, %+v, %+v, error=%+v \n ", route, route.Dst, route.Gw, route.MultiPath, err)
+				}
+
+				// set new default for main
+				if err = netlink.RouteAdd(modifiedMainDefaultRoute); err != nil {
+					// return fmt.Errorf("failed to set new default route (%+v) in main table: %+v", modifiedMainDefaultRoute, err)
+					fmt.Fprintf(os.Stderr, "[welan wrong] failed to set new default route: %+v / %+v, %+v, %+v, error=%+v \n ", modifiedMainDefaultRoute, modifiedMainDefaultRoute.Dst, modifiedMainDefaultRoute.Gw, modifiedMainDefaultRoute.MultiPath, err)
+
+				}
+			*/
 
 		} else {
 			// clean default route in main table but keep 169.254.1.1
