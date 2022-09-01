@@ -287,13 +287,15 @@ func moveRouteTable(iface string, ipfamily int) error {
 			// 	return err
 			// }
 			// failed to delete !!!!!!!!!!
-			if e := netlink.RouteDel(&route); e != nil {
-				fmt.Fprintf(os.Stderr, "[welan wrong] failed to delete route: %+v / %+v, %+v, %+v, error=%+v \n ", route, route.Dst, route.Gw, route.MultiPath, e)
+			if err := netlink.RouteDel(&route); err != nil {
+				fmt.Fprintf(os.Stderr, "[welan wrong] failed to delete route: %+v / %+v, %+v, %+v, error=%+v \n ", route, route.Dst, route.Gw, route.MultiPath, err)
 			}
 
 			// set new default for main
 			if err = netlink.RouteAdd(modifiedMainDefaultRoute); err != nil {
-				return fmt.Errorf("failed to set new default route (%+v) in main table: %+v", modifiedMainDefaultRoute, err)
+				// return fmt.Errorf("failed to set new default route (%+v) in main table: %+v", modifiedMainDefaultRoute, err)
+				fmt.Fprintf(os.Stderr, "[welan wrong] failed to set new default route: %+v / %+v, %+v, %+v, error=%+v \n ", modifiedMainDefaultRoute, modifiedMainDefaultRoute.Dst, modifiedMainDefaultRoute.Gw, modifiedMainDefaultRoute.MultiPath, err)
+
 			}
 
 		} else {
