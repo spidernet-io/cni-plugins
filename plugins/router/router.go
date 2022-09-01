@@ -38,6 +38,8 @@ func main() {
 	skel.PluginMain(cmdAdd, cmdCheck, cmdDel, version.All, bv.BuildString(binName))
 }
 
+var logPrefix string
+
 func cmdAdd(args *skel.CmdArgs) error {
 
 	conf, err := parseConfig(args.StdinData)
@@ -49,7 +51,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	if err = types.LoadArgs(args.Args, &k8sArgs); nil != err {
 		return fmt.Errorf("failed to get pod information, error=%+v \n", err)
 	}
-	logPrefix := fmt.Sprintf("[ plugin=%s podNamespace=%s, podName=%s, containerID=%s ]", binName, k8sArgs.K8S_POD_NAMESPACE, k8sArgs.K8S_POD_NAME, args.ContainerID)
+	logPrefix = fmt.Sprintf("[ plugin=%s podNamespace=%s, podName=%s, containerID=%s ]", binName, k8sArgs.K8S_POD_NAMESPACE, k8sArgs.K8S_POD_NAME, args.ContainerID)
 
 	// skip plugin
 	if conf.Skipped {
@@ -105,15 +107,20 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	// hijack overlay response packet to overlay interface
-	if err := hijackOverlayResponseRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
-		return fmt.Errorf("%s failed hijackOverlayResponseRoute: %v", logPrefix, err)
+	if err := hijackResponseRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
+		return fmt.Errorf("%s failed hijackResponseRoute: %v", logPrefix, err)
 	}
+	// hijackResponseRoute(netns, conf, enableIpv4, enableIpv6)
 	fmt.Fprintf(os.Stderr, "%s succeeded to hijack Overlay Response Route \n", logPrefix)
 
 	// add route in pod: hostIP via DefaultOverlayInterface
-	// add route in pod: custom subnet via DefaultOverlayInterface:  overlay subnet / clusterip subnet ...custom route
-	if err := addRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
+	if err := addHostIPRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
 		return fmt.Errorf("%s failed to add route: %v", logPrefix, err)
+	}
+
+	// add route in pod: custom subnet via DefaultOverlayInterface:  overlay subnet / clusterip subnet ...custom route
+	if err := utils.HijackCustomSubnet(netns, conf.Routes, overlayRouteTable, enableIpv4, enableIpv6); err != nil {
+		return fmt.Errorf("%s failed to add custom subnet rule: %v", logPrefix, err)
 	}
 
 	fmt.Fprintf(os.Stderr, "%s succeeded to add route for chained interface %s \n", logPrefix, preInterfaceName)
@@ -214,37 +221,78 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 
 // delRoute del default route and add default rule route
 // Equivalent: `ip route del <default route>` and `ip r route add <default route> table 100`
-func moveOverlayRoute(iface string, ipfamily int) error {
+func moveRouteTable(iface string, ipfamily int) error {
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
 		return err
 	}
-	routes, err := netlink.RouteList(link, ipfamily)
+	routes, err := netlink.RouteList(nil, ipfamily)
 	if err != nil {
 		return err
 	}
 
 	for _, route := range routes {
+
 		// in order to add route-rule table, we should add rule route table before removing the default route
 		// make sure table-100 exist
 		if route.Table != unix.RT_TABLE_MAIN {
 			continue
 		}
-		// clean default route in main table but keep 169.254.1.1
-		if route.Dst == nil {
-			if err = netlink.RouteDel(&route); err != nil {
-				return err
+
+		if route.LinkIndex != link.Attrs().Index {
+			// especially for ipv6 default gateway
+			var generatedRoute, deletedRoute *netlink.Route
+			if len(route.MultiPath) == 0 {
+				continue
+			}
+
+			// get generated default Route for new table
+			for _, v := range route.MultiPath {
+				if v.LinkIndex == link.Attrs().Index {
+					generatedRoute = &netlink.Route{
+						LinkIndex: route.LinkIndex,
+						Gw:        v.Gw,
+						Table:     overlayRouteTable,
+						MTU:       route.MTU,
+					}
+					deletedRoute = &netlink.Route{
+						LinkIndex: route.LinkIndex,
+						Gw:        v.Gw,
+						Table:     unix.RT_TABLE_MAIN,
+					}
+					break
+				}
+			}
+			if generatedRoute == nil {
+				continue
+			}
+			// add default route to new table
+			if err = netlink.RouteAdd(generatedRoute); err != nil {
+				return fmt.Errorf("failed to move overlay route (%+v) to new table: %+v", generatedRoute, err)
+			}
+			// delete default route in main table
+			if err := netlink.RouteDel(deletedRoute); err != nil {
+				return fmt.Errorf("failed to delete default route (%+v) in main table: %+v", deletedRoute, err)
+			}
+
+		} else {
+			// clean default route in main table but keep 169.254.1.1
+			if route.Dst == nil {
+				if err = netlink.RouteDel(&route); err != nil {
+					return fmt.Errorf("failed to delete default route (%+v) in main table: %+v", route, err)
+				}
+			}
+			route.Table = overlayRouteTable
+			if err = netlink.RouteAdd(&route); err != nil {
+				return fmt.Errorf("failed to add route (%+v) to new table: %+v", route, err)
 			}
 		}
-		route.Table = overlayRouteTable
-		if err = netlink.RouteAdd(&route); err != nil {
-			return err
-		}
 	}
-	return err
+
+	return nil
 }
 
-func addRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool) error {
+func addHostIPRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool) error {
 	var err error
 
 	hostIPs, err := utils.GetHostIps()
@@ -253,28 +301,12 @@ func addRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool
 	}
 
 	err = netns.Do(func(_ ns.NetNS) error {
-
 		// add route in pod: hostIP via DefaultOverlayInterface
-		if err = utils.RouteAdd(conf.DefaultOverlayInterface, hostIPs, enableIpv4, enableIpv6); err != nil {
+		if _, _, err = utils.RouteAdd(conf.DefaultOverlayInterface, hostIPs, enableIpv4, enableIpv6); err != nil {
 			return err
 		}
 
-		// add route in pod: custom subnet via DefaultOverlayInterface:  overlay subnet / clusterip subnet ...custom route
-		link, err := netlink.LinkByName(conf.DefaultOverlayInterface)
-		if err != nil {
-			return err
-		}
-
-		for _, route := range conf.Routes {
-			if err = netlink.RouteAdd(&netlink.Route{
-				LinkIndex: link.Attrs().Index,
-				Scope:     netlink.SCOPE_LINK,
-				Dst:       &route.Dst,
-			}); err != nil && err.Error() != "file exists" {
-				return err
-			}
-		}
-		return err
+		return nil
 	})
 	return err
 }
@@ -318,7 +350,7 @@ func addRouteRule(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool)
 	return err
 }
 
-func hijackOverlayResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool) error {
+func hijackResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool) error {
 
 	// set route rule: source overlayIP for new rule
 	if err := addRouteRule(netns, conf, enableIpv4, enableIpv6); err != nil {
@@ -329,7 +361,7 @@ func hijackOverlayResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, en
 	if *conf.HijackOverlayResponse {
 		if enableIpv4 {
 			err := netns.Do(func(_ ns.NetNS) error {
-				return moveOverlayRoute(conf.DefaultOverlayInterface, netlink.FAMILY_V4)
+				return moveRouteTable(conf.DefaultOverlayInterface, netlink.FAMILY_V4)
 			})
 			if err != nil {
 				return err
@@ -337,7 +369,7 @@ func hijackOverlayResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, en
 		}
 		if enableIpv6 {
 			err := netns.Do(func(_ ns.NetNS) error {
-				return moveOverlayRoute(conf.DefaultOverlayInterface, netlink.FAMILY_V6)
+				return moveRouteTable(conf.DefaultOverlayInterface, netlink.FAMILY_V6)
 			})
 			if err != nil {
 				return err
