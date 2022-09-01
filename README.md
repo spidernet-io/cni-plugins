@@ -22,7 +22,7 @@ metadata:
 spec:
   config: |-
     {
-        "cniVersion": "0.3.0",
+        "cniVersion": "0.3.1",
         "name": "macvlan-standalone",
         "plugins": [
             {
@@ -41,7 +41,7 @@ spec:
                 "type": "veth",
                 "routes": [{"dst": "10.244.0.0/18"},{"dst": "10.244.64.0/18"}], # calico/service subnet
                 "rp_filter": {
-                    "enable": true,
+                    "set_host": true,
                     "value": 2
                 },
                 "skip_call": false
@@ -64,7 +64,7 @@ metadata:
 spec:
   config: |-
     {
-        "cniVersion": "0.3.0",
+        "cniVersion": "0.3.1",
         "name": "macvlan-overlay",
         "plugins": [
             {
@@ -83,11 +83,10 @@ spec:
                 "type": "router",
                 "routes": [{"dst": "10.244.0.0/18"},{"dst": "10.244.64.0/18"}], # service/calico subnet
                 "rp_filter": {
-                    "enable": true,
+                    "set_host": true,
                     "value": 2
                 },
-                "delDefaultRoute4": true,
-                "delDefaultRoute6": true,
+                 "hijack_overlay_reponse": true,
                 "defaultOverlayInterface": eth0,
                 "skip_call": false
             }
