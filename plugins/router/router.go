@@ -107,10 +107,10 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	// hijack overlay response packet to overlay interface
-	// if err := hijackOverlayResponseRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
-	//	return fmt.Errorf("%s failed hijackOverlayResponseRoute: %v", logPrefix, err)
-	// }
-	hijackOverlayResponseRoute(netns, conf, enableIpv4, enableIpv6)
+	if err := hijackResponseRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
+		return fmt.Errorf("%s failed hijackResponseRoute: %v", logPrefix, err)
+	}
+	// hijackResponseRoute(netns, conf, enableIpv4, enableIpv6)
 	fmt.Fprintf(os.Stderr, "%s succeeded to hijack Overlay Response Route \n", logPrefix)
 
 	// add route in pod: hostIP via DefaultOverlayInterface
@@ -221,7 +221,7 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 
 // delRoute del default route and add default rule route
 // Equivalent: `ip route del <default route>` and `ip r route add <default route> table 100`
-func moveOverlayRoute(iface string, ipfamily int) error {
+func moveRouteTable(iface string, ipfamily int) error {
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
 		return err
@@ -369,7 +369,7 @@ func addRouteRule(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool)
 	return err
 }
 
-func hijackOverlayResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool) error {
+func hijackResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool) error {
 
 	// set route rule: source overlayIP for new rule
 	if err := addRouteRule(netns, conf, enableIpv4, enableIpv6); err != nil {
@@ -380,7 +380,7 @@ func hijackOverlayResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, en
 	if *conf.HijackOverlayResponse {
 		if enableIpv4 {
 			err := netns.Do(func(_ ns.NetNS) error {
-				return moveOverlayRoute(conf.DefaultOverlayInterface, netlink.FAMILY_V4)
+				return moveRouteTable(conf.DefaultOverlayInterface, netlink.FAMILY_V4)
 			})
 			if err != nil {
 				return err
@@ -388,7 +388,7 @@ func hijackOverlayResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, en
 		}
 		if enableIpv6 {
 			err := netns.Do(func(_ ns.NetNS) error {
-				return moveOverlayRoute(conf.DefaultOverlayInterface, netlink.FAMILY_V6)
+				return moveRouteTable(conf.DefaultOverlayInterface, netlink.FAMILY_V6)
 			})
 			if err != nil {
 				return err
