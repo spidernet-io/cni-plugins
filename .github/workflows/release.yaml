@@ -12,6 +12,7 @@ on:
       - v*
     branches:
       - v*
+      - main
   workflow_dispatch:
     inputs:
       ref:

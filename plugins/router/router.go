@@ -127,7 +127,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	// 4. setup sysctl rp_filter
 	if err = utils.SysctlRPFilter(netns, conf.RPFilter); err != nil {
-		return fmt.Errorf("%s failed to set rp_filter : %v", logPrefix, err)
+		return fmt.Errorf("%s : %v", logPrefix, err)
 	}
 	fmt.Fprintf(os.Stderr, "%s succeeded to set rp_filter \n", logPrefix)
 
