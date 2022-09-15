@@ -9,9 +9,12 @@ import (
 	"github.com/containernetworking/cni/pkg/version"
 	"github.com/containernetworking/plugins/pkg/ns"
 	bv "github.com/containernetworking/plugins/pkg/utils/buildversion"
+	"github.com/spidernet-io/cni-plugins/pkg/constant"
+	"github.com/spidernet-io/cni-plugins/pkg/logging"
 	ty "github.com/spidernet-io/cni-plugins/pkg/types"
 	"github.com/spidernet-io/cni-plugins/pkg/utils"
 	"github.com/vishvananda/netlink"
+	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 	"k8s.io/utils/pointer"
 	"os"
@@ -20,14 +23,14 @@ import (
 
 type PluginConf struct {
 	types.NetConf
-	// should include: overlay Subnet , clusterip subnet
-	Routes []*types.Route `json:"routes,omitempty"`
+	// should include: overlay Subnet , clusterIP subnet
+	Routes                  []*types.Route `json:"routes,omitempty"`
+	HijackOverlayResponse   *bool          `json:"hijack_overlay_response,omitempty"`
+	DefaultOverlayInterface string         `json:"overlay_interface,omitempty"`
 	// RpFilter
-	HijackOverlayResponse   *bool  `json:"hijack_overlay_reponse,omitempty"`
-	DefaultOverlayInterface string `json:"overlay_interface,omitempty"`
-	// RpFilter
-	RPFilter *ty.RPFilter `json:"rp_filter,omitempty"`
-	Skipped  bool         `json:"skip_call,omitempty"`
+	RPFilter   *ty.RPFilter   `json:"rp_filter,omitempty"`
+	Skipped    bool           `json:"skip_call,omitempty"`
+	LogOptions *ty.LogOptions `json:"log_options,omitempty"`
 }
 
 var binName = filepath.Base(os.Args[0])
@@ -38,56 +41,78 @@ func main() {
 	skel.PluginMain(cmdAdd, cmdCheck, cmdDel, version.All, bv.BuildString(binName))
 }
 
-var logPrefix string
-
 func cmdAdd(args *skel.CmdArgs) error {
+	var logger *zap.Logger
 
 	conf, err := parseConfig(args.StdinData)
 	if err != nil {
 		return err
 	}
 
+	if err := logging.SetLogOptions(conf.LogOptions); err != nil {
+		return fmt.Errorf("faild to init logger: %v ", err)
+	}
+
+	logger = logging.LoggerFile.Named(binName)
+
 	k8sArgs := ty.K8sArgs{}
 	if err = types.LoadArgs(args.Args, &k8sArgs); nil != err {
+		logger.Error(err.Error())
 		return fmt.Errorf("failed to get pod information, error=%+v \n", err)
 	}
-	logPrefix = fmt.Sprintf("[ plugin=%s podNamespace=%s, podName=%s, containerID=%s ]", binName, k8sArgs.K8S_POD_NAMESPACE, k8sArgs.K8S_POD_NAME, args.ContainerID)
 
+	// register some args into logger
+	logger = logger.With(zap.String("Action", "Add"),
+		zap.String("ContainerID", args.ContainerID),
+		zap.String("PodUID", string(k8sArgs.K8S_POD_UID)),
+		zap.String("PodName", string(k8sArgs.K8S_POD_NAME)),
+		zap.String("PodNamespace", string(k8sArgs.K8S_POD_NAMESPACE)),
+		zap.String("IfName", args.IfName))
+
+	logger.Debug("Succeed to parse cni config", zap.Any("Config", *conf))
 	// skip plugin
 	if conf.Skipped {
+		logger.Info("Ignore this plugin call, Return directly ")
 		return types.PrintResult(conf.PrevResult, conf.CNIVersion)
 	}
 	if conf.PrevResult == nil {
-		return fmt.Errorf("%s failed to find PrevResult, must be called as chained plugin", logPrefix)
+		logger.Error("failed to find PrevResult, must be called as chained plugin")
+		return fmt.Errorf("failed to find PrevResult, must be called as chained plugin")
 	}
 
 	// ------------------- parse prevResult
 	prevResult, err := current.GetResult(conf.PrevResult)
 	if err != nil {
-		return fmt.Errorf("%s failed to convert prevResult: %v", logPrefix, err)
+		logger.Error(err.Error())
+		return fmt.Errorf("failed to convert prevResult: %v", err)
 	}
 
 	enableIpv4 := false
 	enableIpv6 := false
 	if len(prevResult.IPs) == 0 {
-		return fmt.Errorf("%s got no container IPs", logPrefix)
-	} else {
-		for _, v := range prevResult.IPs {
-			if v.Address.IP.To4() != nil {
-				enableIpv4 = true
-			} else {
-				enableIpv6 = true
-			}
+		err = fmt.Errorf(" got no container IPs")
+		logger.Error(err.Error())
+		return err
+	}
+	for _, v := range prevResult.IPs {
+		if v.Address.IP.To4() != nil {
+			enableIpv4 = true
+		} else {
+			enableIpv6 = true
 		}
 	}
-	fmt.Fprintf(os.Stderr, "%s enableIpv4=%v, enableIpv6=%v \n", logPrefix, enableIpv4, enableIpv6)
 
 	if len(prevResult.Interfaces) == 0 {
-		return fmt.Errorf("%s failed to find interface from prevResult", logPrefix)
+		err = fmt.Errorf("failed to find interface from prevResult")
+		logger.Error(err.Error())
+		return err
 	}
+
 	preInterfaceName := prevResult.Interfaces[0].Name
 	if len(preInterfaceName) == 0 {
-		return fmt.Errorf("%s failed to find interface name from prevResult", logPrefix)
+		err = fmt.Errorf("failed to find interface name from prevResult")
+		logger.Error(err.Error())
+		return err
 	}
 
 	// Pass the prevResult through this plugin to the next one
@@ -95,46 +120,50 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	netns, err := ns.GetNS(args.Netns)
 	if err != nil {
-		return fmt.Errorf("%s failed to open netns %q: %v", logPrefix, args.Netns, err)
+		logger.Error(err.Error())
+		return fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
 	}
 	defer netns.Close()
 
 	// -----------------  Add route table in pod ns
 	if enableIpv6 {
-		if err := utils.EnableIpv6Sysctl(netns, conf.DefaultOverlayInterface); err != nil {
-			return fmt.Errorf("%s failed to enable ipv6 sysctl: %v", logPrefix, err)
+		if err := utils.EnableIpv6Sysctl(logger, netns, conf.DefaultOverlayInterface); err != nil {
+			logger.Error(err.Error())
+			return err
 		}
 	}
 
 	// hijack overlay response packet to overlay interface
-	if err := hijackResponseRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
-		return fmt.Errorf("%s failed hijackResponseRoute: %v", logPrefix, err)
-	}
-	// hijackResponseRoute(netns, conf, enableIpv4, enableIpv6)
-	fmt.Fprintf(os.Stderr, "%s succeeded to hijack Overlay Response Route \n", logPrefix)
+	logger.Debug("Pod IP Family", zap.Bool("ipv4", enableIpv4), zap.Bool("ipv6", enableIpv6))
 
+	if err := hijackResponseRoute(logger, netns, conf, enableIpv4, enableIpv6); err != nil {
+		logger.Error(err.Error())
+		return err
+	}
+
+	// -----------------  Add route table in pod ns
 	// add route in pod: hostIP via DefaultOverlayInterface
-	if err := addHostIPRoute(netns, conf, enableIpv4, enableIpv6); err != nil {
-		return fmt.Errorf("%s failed to add route: %v", logPrefix, err)
+	if err := addHostIPRoute(logger, netns, conf, enableIpv4, enableIpv6); err != nil {
+		logger.Error("failed to add host ip route in container", zap.Error(err))
+		return fmt.Errorf("failed to add route: %v", err)
 	}
 
 	// add route in pod: custom subnet via DefaultOverlayInterface:  overlay subnet / clusterip subnet ...custom route
-	if err := utils.HijackCustomSubnet(netns, conf.Routes, overlayRouteTable, enableIpv4, enableIpv6); err != nil {
-		return fmt.Errorf("%s failed to add custom subnet rule: %v", logPrefix, err)
+	if err := utils.HijackCustomSubnet(logger, netns, conf.Routes, overlayRouteTable, enableIpv4, enableIpv6); err != nil {
+		logger.Error(err.Error())
+		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "%s succeeded to add route for chained interface %s \n", logPrefix, preInterfaceName)
-
-	// 4. setup sysctl rp_filter
-	if err = utils.SysctlRPFilter(netns, conf.RPFilter); err != nil {
-		return fmt.Errorf("%s : %v", logPrefix, err)
+	// setup sysctl rp_filter
+	if err = utils.SysctlRPFilter(logger, netns, conf.RPFilter); err != nil {
+		logger.Error(err.Error())
+		return err
 	}
-	fmt.Fprintf(os.Stderr, "%s succeeded to set rp_filter \n", logPrefix)
 
 	// TODO: for multiple macvlan interfaces, maybe need add "ip rule" for second interface
 
-	fmt.Fprintf(os.Stderr, "%s succeeded to set for chained interface %s for overlay interface %s \n", logPrefix, preInterfaceName, conf.DefaultOverlayInterface)
-
+	logger.Info("Succeeded to set for chained interface for overlay interface",
+		zap.String("interface", preInterfaceName))
 	return types.PrintResult(conf.PrevResult, conf.CNIVersion)
 }
 
@@ -172,19 +201,17 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 		}
 	}
 
+	conf.LogOptions = logging.InitLogOptions(conf.LogOptions)
+	if conf.LogOptions.LogFilePath == "" {
+		conf.LogOptions.LogFilePath = constant.RouterLogDefaultFilePath
+	}
+
 	if conf.DefaultOverlayInterface == "" {
 		conf.DefaultOverlayInterface = "eth0"
 	}
 
 	// value must be 0/1/2
 	// If not, giving default value: RPFilter_Loose(2) to it
-	if conf.RPFilter == nil {
-		// give default value: RPFilter_Loose(2)
-		conf.RPFilter = &ty.RPFilter{
-			Enable: pointer.Bool(true),
-			Value:  pointer.Int32(2),
-		}
-	}
 	if conf.RPFilter != nil {
 		if conf.RPFilter.Enable == nil {
 			// give default value: RPFilter_Loose(2)
@@ -210,6 +237,12 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 				}
 			}
 		}
+	} else {
+		// give default value: RPFilter_Loose(2)
+		conf.RPFilter = &ty.RPFilter{
+			Enable: pointer.Bool(true),
+			Value:  pointer.Int32(2),
+		}
 	}
 
 	if conf.HijackOverlayResponse == nil {
@@ -219,27 +252,52 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	return &conf, nil
 }
 
-// delRoute del default route and add default rule route
+// moveRouteTable del default route and add default rule route in pod netns
 // Equivalent: `ip route del <default route>` and `ip r route add <default route> table 100`
-func moveRouteTable(iface string, ipfamily int) error {
+func moveRouteTable(logger *zap.Logger, iface string, ipfamily int) error {
+	logger.Debug(fmt.Sprintf("Moving overlay route table from main table to %d ", overlayRouteTable),
+		zap.String("iface", iface),
+		zap.Int("ipfamily", ipfamily))
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
+		logger.Error(err.Error())
 		return err
 	}
+
 	routes, err := netlink.RouteList(nil, ipfamily)
 	if err != nil {
+		logger.Error(err.Error())
 		return err
 	}
 
 	for _, route := range routes {
 
-		// in order to add route-rule table, we should add rule route table before removing the default route
-		// make sure table-100 exist
+		logger.Debug("Found Route", zap.String("Route", route.String()))
+		// only handle route tables from table main
 		if route.Table != unix.RT_TABLE_MAIN {
 			continue
 		}
 
-		if route.LinkIndex != link.Attrs().Index {
+		// ingore local link route
+		if route.Dst.String() == "fe80::/64" {
+			continue
+		}
+
+		if route.LinkIndex == link.Attrs().Index {
+			if route.Dst == nil {
+				if err = netlink.RouteDel(&route); err != nil {
+					logger.Error("failed to delete default route  in main table ", zap.String("route", route.String()), zap.Error(err))
+					return fmt.Errorf("failed to delete default route (%+v) in main table: %+v", route, err)
+				}
+			}
+			route.Table = overlayRouteTable
+			if err = netlink.RouteAdd(&route); err != nil {
+				logger.Error("failed to add default route to new table ", zap.String("route", route.String()), zap.Error(err))
+				return fmt.Errorf("failed to add route (%+v) to new table: %+v", route, err)
+			}
+			logger.Debug("Succeed to move default route table from main to new table", zap.String("Route", route.String()))
+			continue
+		} else {
 			// especially for ipv6 default gateway
 			var generatedRoute, deletedRoute *netlink.Route
 			if len(route.MultiPath) == 0 {
@@ -248,15 +306,16 @@ func moveRouteTable(iface string, ipfamily int) error {
 
 			// get generated default Route for new table
 			for _, v := range route.MultiPath {
+				logger.Debug("MultiPath", zap.String("v", v.String()), zap.String("Link Index", string(rune(route.LinkIndex))))
 				if v.LinkIndex == link.Attrs().Index {
 					generatedRoute = &netlink.Route{
-						LinkIndex: route.LinkIndex,
+						LinkIndex: v.LinkIndex,
 						Gw:        v.Gw,
 						Table:     overlayRouteTable,
 						MTU:       route.MTU,
 					}
 					deletedRoute = &netlink.Route{
-						LinkIndex: route.LinkIndex,
+						LinkIndex: v.LinkIndex,
 						Gw:        v.Gw,
 						Table:     unix.RT_TABLE_MAIN,
 					}
@@ -268,44 +327,38 @@ func moveRouteTable(iface string, ipfamily int) error {
 			}
 			// add default route to new table
 			if err = netlink.RouteAdd(generatedRoute); err != nil {
+				logger.Error("failed to add overlay route to new table", zap.String("generatedRoute", generatedRoute.String()), zap.Error(err))
 				return fmt.Errorf("failed to move overlay route (%+v) to new table: %+v", generatedRoute, err)
 			}
 			// delete default route in main table
 			if err := netlink.RouteDel(deletedRoute); err != nil {
+				logger.Error("failed to del overlay route from main table", zap.String("deletedRoute", deletedRoute.String()), zap.Error(err))
 				return fmt.Errorf("failed to delete default route (%+v) in main table: %+v", deletedRoute, err)
-			}
-
-		} else {
-			// clean default route in main table but keep 169.254.1.1
-			if route.Dst == nil {
-				if err = netlink.RouteDel(&route); err != nil {
-					return fmt.Errorf("failed to delete default route (%+v) in main table: %+v", route, err)
-				}
-			}
-			route.Table = overlayRouteTable
-			if err = netlink.RouteAdd(&route); err != nil {
-				return fmt.Errorf("failed to add route (%+v) to new table: %+v", route, err)
 			}
 		}
 	}
-
 	return nil
 }
 
-func addHostIPRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool) error {
+// addHostIPRoute add all routes to the node in pod netns, the nexthop is the ip of the host
+func addHostIPRoute(logger *zap.Logger, netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv6 bool) error {
 	var err error
-
-	hostIPs, err := utils.GetHostIps()
+	hostIPs, err := utils.GetHostIps(logger, enableIpv4, enableIpv6)
 	if err != nil {
+		logger.Error(err.Error())
 		return err
 	}
 
+	logger.Debug("hijack overlay response packet to overlay interface",
+		zap.String("Netns Path", netns.Path()),
+		zap.Any("Host IPs", hostIPs),
+		zap.Bool("enableIpv4", enableIpv4),
+		zap.Bool("enableIpv6", enableIpv6))
 	err = netns.Do(func(_ ns.NetNS) error {
 		// add route in pod: hostIP via DefaultOverlayInterface
-		if _, _, err = utils.RouteAdd(conf.DefaultOverlayInterface, hostIPs, enableIpv4, enableIpv6); err != nil {
+		if _, _, err = utils.RouteAdd(logger, conf.DefaultOverlayInterface, hostIPs, enableIpv4, enableIpv6); err != nil {
 			return err
 		}
-
 		return nil
 	})
 	return err
@@ -313,15 +366,18 @@ func addHostIPRoute(netns ns.NetNS, conf *PluginConf, enableIpv4 bool, enableIpv
 
 // addRouteRule add route rule for calico cidr(ipv4 and ipv6)
 // Equivalent to: `ip rule add ... `
-func addRouteRule(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool) error {
+func addRouteRule(logger *zap.Logger, netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool) error {
+	logger.Debug("Add IP Rule Table in Pod Netns", zap.String("Netns Path", netns.Path()))
 	err := netns.Do(func(_ ns.NetNS) error {
 		link, err := netlink.LinkByName(conf.DefaultOverlayInterface)
 		if err != nil {
+			logger.Error(err.Error())
 			return err
 		}
 
 		addrs, err := netlink.AddrList(link, netlink.FAMILY_ALL)
 		if err != nil {
+			logger.Error(err.Error())
 			return err
 		}
 
@@ -338,7 +394,9 @@ func addRouteRule(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool)
 			rule := netlink.NewRule()
 			rule.Table = overlayRouteTable
 			rule.Src = addr.IPNet
+			logger.Debug("Added rule table info", zap.String("Rule", rule.String()))
 			if err = netlink.RuleAdd(rule); err != nil {
+				logger.Error(err.Error())
 				return err
 			}
 		}
@@ -350,10 +408,15 @@ func addRouteRule(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool)
 	return err
 }
 
-func hijackResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool) error {
-
-	// set route rule: source overlayIP for new rule
-	if err := addRouteRule(netns, conf, enableIpv4, enableIpv6); err != nil {
+// hijackResponseRoute make sure that the reply packets accessing the overlay interface are still sent from the overlay interface.
+func hijackResponseRoute(logger *zap.Logger, netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv6 bool) error {
+	logger.Debug("hijack overlay response packet to overlay interface",
+		zap.String("Netns Path", netns.Path()),
+		zap.Bool("enableIpv4", enableIpv4),
+		zap.Bool("enableIpv6", enableIpv6))
+	// add route rule: source overlayIP for new rule
+	if err := addRouteRule(logger, netns, conf, enableIpv4, enableIpv6); err != nil {
+		logger.Error(fmt.Sprintf("failed to add route table %d: %v ", overlayRouteTable, err))
 		return err
 	}
 
@@ -361,17 +424,19 @@ func hijackResponseRoute(netns ns.NetNS, conf *PluginConf, enableIpv4, enableIpv
 	if *conf.HijackOverlayResponse {
 		if enableIpv4 {
 			err := netns.Do(func(_ ns.NetNS) error {
-				return moveRouteTable(conf.DefaultOverlayInterface, netlink.FAMILY_V4)
+				return moveRouteTable(logger, conf.DefaultOverlayInterface, netlink.FAMILY_V4)
 			})
 			if err != nil {
+				logger.Error(err.Error())
 				return err
 			}
 		}
 		if enableIpv6 {
 			err := netns.Do(func(_ ns.NetNS) error {
-				return moveRouteTable(conf.DefaultOverlayInterface, netlink.FAMILY_V6)
+				return moveRouteTable(logger, conf.DefaultOverlayInterface, netlink.FAMILY_V6)
 			})
 			if err != nil {
+				logger.Error(err.Error())
 				return err
 			}
 		}

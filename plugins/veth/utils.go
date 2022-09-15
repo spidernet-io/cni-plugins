@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/vishvananda/netlink"
+	"go.uber.org/zap"
 	"net"
 )
 
@@ -49,22 +50,24 @@ func getChainedInterfaceIps(netns ns.NetNS, interfacenName string) ([]string, er
 }
 
 // neighborAdd add static neighborhood tales
-func neighborAdd(iface, mac string, ips []string) error {
+func neighborAdd(logger *zap.Logger, iface, mac string, ips []string) error {
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get link: %v", err)
 	}
 
 	// add host neighborhood in pod
 	for _, ip := range ips {
-		if err := netlink.NeighAdd(&netlink.Neigh{
+		neigh := &netlink.Neigh{
 			LinkIndex:    link.Attrs().Index,
 			State:        netlink.NUD_PERMANENT,
 			Type:         netlink.NDA_LLADDR,
 			IP:           net.ParseIP(ip),
 			HardwareAddr: parseMac(mac),
-		}); err != nil && err.Error() != "file exists" {
-			return err
+		}
+		if err := netlink.NeighAdd(neigh); err != nil && err.Error() != "file exists" {
+			logger.Error("failed to add neigh table", zap.String("interface", iface), zap.String("neigh", neigh.String()), zap.Error(err))
+			return fmt.Errorf("failed to add neigh table: %v ", err)
 		}
 	}
 	return nil

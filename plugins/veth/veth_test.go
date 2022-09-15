@@ -27,6 +27,10 @@ func Test_parseConfig(t *testing.T) {
 			name:  "err rp_filter value(3)",
 			stdin: []byte("\t\"cniVersion\": \"0.3.1\",\n\t\"name\": \"veth\",\n\t\"type\": \"veth\",\n\t\"routes\": [\n\t\t{\"dst\": \"10.244.0.0/16\"},\n    \t{\"dst\": \"172.16.0.0/24\"}\n\t],\n\t\"rp_filter\": {\n\t\t\"set_host\": true,\n\t\t\"value\": 3\n\t},\n\t\"prevResult\": {\n\t\t\"interfaces\": [\n\t\t\t{\"name\": \"host\"},\n\t\t\t{\"name\": \"container\", \"sandbox\":\"netns\"}\n\t\t],\n\t\t\"ips\": [\n\t\t\t{\n\t\t\t\t\"version\": \"4\",\n\t\t\t\t\"address\": \"10.0.0.1/24\",\n\t\t\t\t\"gateway\": \"10.0.0.1\",\n\t\t\t\t\"interface\": 0\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"version\": \"6\",\n\t\t\t\t\"address\": \"2001:db8:1::2/64\",\n\t\t\t\t\"gateway\": \"2001:db8:1::1\",\n\t\t\t\t\"interface\": 0\n\t\t\t}\n\t\t]\n\t}"),
 			err:   nil,
+		}, {
+			name:  "nil log_options",
+			stdin: []byte("\t\"cniVersion\": \"0.3.1\",\n\t\"name\": \"veth\",\n\t\"type\": \"veth\",\n\t\"routes\": [\n\t\t{\"dst\": \"10.244.0.0/16\"},\n    \t{\"dst\": \"172.16.0.0/24\"}\n\t],\n\t\"rp_filter\": {\n\t\t\"set_host\": true,\n\t\t\"value\": 3\n\t},\n\t\"prevResult\": {\n\t\t\"interfaces\": [\n\t\t\t{\"name\": \"host\"},\n\t\t\t{\"name\": \"container\", \"sandbox\":\"netns\"}\n\t\t],\n\t\t\"ips\": [\n\t\t\t{\n\t\t\t\t\"version\": \"4\",\n\t\t\t\t\"address\": \"10.0.0.1/24\",\n\t\t\t\t\"gateway\": \"10.0.0.1\",\n\t\t\t\t\"interface\": 0\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"version\": \"6\",\n\t\t\t\t\"address\": \"2001:db8:1::2/64\",\n\t\t\t\t\"gateway\": \"2001:db8:1::1\",\n\t\t\t\t\"interface\": 0\n\t\t\t}\n\t\t]\n\t}"),
+			err:   nil,
 		},
 	}
 	for _, tt := range tests {

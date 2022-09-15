@@ -21,3 +21,11 @@ type K8sArgs struct {
 	K8S_POD_INFRA_CONTAINER_ID types.UnmarshallableString //revive:disable-line
 	K8S_POD_UID                types.UnmarshallableString //revive:disable-line
 }
+
+type LogOptions struct {
+	LogLevel        string `json:"log_level"`
+	LogFilePath     string `json:"log_file"`
+	LogFileMaxSize  *int   `json:"log_max_size"`
+	LogFileMaxAge   *int   `json:"log_max_age"`
+	LogFileMaxCount *int   `json:"log_max_count"`
+}
