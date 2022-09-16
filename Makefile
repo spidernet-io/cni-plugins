@@ -14,7 +14,7 @@ build:
 	@mkdir -p ./.tmp/bin ; \
 	for plugin in `ls ./plugins/` ; do   \
 		echo "build $${plugin} to $(ROOT_DIR)/.tmp/bin/${plugin}" ; \
-		$(GO_BUILD_FLAGS) $(GO_BUILD) -o ./.tmp/bin/$(ARCH)/$${plugin} ./plugins/$${plugin} ;  \
+		$(GO_BUILD_FLAGS) $(GO_BUILD) -o ./.tmp/bin/$${plugin} ./plugins/$${plugin} ;  \
 	done
 
 .PHONY: lint-golang
