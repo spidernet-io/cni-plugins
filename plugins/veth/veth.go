@@ -29,7 +29,7 @@ import (
 type PluginConf struct {
 	types.NetConf
 	// should include: overlay Subnet , clusterip subnet
-	Routes []*types.Route `json:"routes,omitempty"`
+	Routes *ty.Route `json:"routes,omitempty"`
 	// RpFilter
 	RPFilter   *ty.RPFilter   `json:"rp_filter,omitempty"`
 	Skipped    bool           `json:"skip_call,omitempty"`
@@ -94,6 +94,8 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("failed to convert prevResult: %v", err)
 	}
 
+	logger.Debug("Start call veth", zap.Any("config", conf))
+
 	if len(prevResult.IPs) == 0 {
 		err = fmt.Errorf(" got no container IPs")
 		logger.Error(err.Error())
@@ -141,19 +143,15 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("failed to check first veth interface: %v", e)
 	}
 
-	if !isfirstInterface {
-		logger.Info("Skip calling veth-plugin since it cannot be called repeatedly ")
-		return types.PrintResult(conf.PrevResult, conf.CNIVersion)
-	}
 	// 1. setup veth pair
 	var hostInterface *current.Interface
 	var conInterface *current.Interface
-	hostInterface, conInterface, err = setupVeth(netns, args.ContainerID, prevResult)
+	hostInterface, conInterface, err = setupVeth(logger, netns, isfirstInterface, args.ContainerID, prevResult)
 	if err != nil {
 		logger.Error(err.Error())
 		return err
 	}
-	logger.Info("Succeeded to set veth interface", zap.String("container veth", conInterface.Name), zap.String("host veth", hostInterface.Name))
+	logger.Info("Succeeded to set veth interface", zap.Any("interfaces", prevResult.Interfaces), zap.Any("ips", prevResult.IPs), zap.Any("routes", prevResult.Routes))
 
 	// get all ips on the node
 	hostIPs, err := utils.GetHostIps(logger, enableIpv4, enableIpv6)
@@ -177,7 +175,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	// 2. setup neighborhood
-	if err = setupNeighborhood(logger, netns, hostInterface, conInterface, hostIPs, conIPs); err != nil {
+	if err = setupNeighborhood(logger, isfirstInterface, netns, hostInterface, conInterface, hostIPs, conIPs, args.ContainerID); err != nil {
 		logger.Error(err.Error())
 		return err
 	}
@@ -227,10 +225,12 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	// End previous result parsing
 
 	// some validation
-	for idx, route := range conf.Routes {
-		if route.Dst.IP == nil {
-			return nil, fmt.Errorf("[veth] routes[%v]: des must be specified", idx)
-		}
+	if len(conf.Routes.OverlaySubnet) == 0 {
+		return nil, fmt.Errorf("the subnet of overlay cni(such as calico or cilium) must be given")
+	}
+
+	if len(conf.Routes.ServiceSubnet) == 0 {
+		return nil, fmt.Errorf("the subnet of service clusterip must be given")
 	}
 
 	// value must be 0/1/2
@@ -267,7 +267,12 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 
 // setupVeth sets up a pair of virtual ethernet devices. It will create both veth
 // devices and move the host-side veth into the provided hostNS namespace.
-func setupVeth(netns ns.NetNS, containerID string, pr *current.Result) (*current.Interface, *current.Interface, error) {
+func setupVeth(logger *zap.Logger, netns ns.NetNS, isfirstInterface bool, containerID string, pr *current.Result) (*current.Interface, *current.Interface, error) {
+	if !isfirstInterface {
+		logger.Info("Veth-peer has already setup, skip it ")
+		return nil, nil, nil
+	}
+
 	hostInterface := &current.Interface{}
 	containerInterface := &current.Interface{}
 
@@ -299,31 +304,38 @@ func setupVeth(netns ns.NetNS, containerID string, pr *current.Result) (*current
 
 // setupNeighborhood setup neighborhood tables for pod and host.
 // equivalent to: `ip neigh add ....`
-func setupNeighborhood(logger *zap.Logger, netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string) error {
+func setupNeighborhood(logger *zap.Logger, isfirstInterface bool, netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, containerId string) error {
 	var err error
 	// set neighborhood on host
 	logger.Debug("Add Neighborhood Table In Host Side", zap.String("Netns Path", netns.Path()),
 		zap.String("hostInterface name", hostInterface.Name),
 		zap.String("containerInterface Mac", chainedInterface.Mac),
 		zap.Strings("container IPs", conIPs))
+
+	//if !isfirstInterface {
+	//	//
+	//	logger.Debug("")
+	//}
+
 	if err = neighborAdd(logger, hostInterface.Name, chainedInterface.Mac, conIPs); err != nil {
 		logger.Error(err.Error())
 		return err
 	}
 
 	// set up host veth Interface neighborhood in pod
-	// bug?: sometimes hostveth's mac not be correct, we get hosVeth's mac via LinkByName
-	// hostVethLink, err := netlink.LinkByName(getHostVethName(containerID))
-	//if err != nil {
-	//	logger.Error("failed to find veth peer host side",zap.String("Veth Name(host)",getHostVethName(containerID)),zap.Error(err))
-	//	return err
-	//}
+	// bug?: sometimes hostveth's mac not be correct, we get hosVeth's mac via LinkByName directly
+	hostVethLink, err := netlink.LinkByName(getHostVethName(containerId))
+	if err != nil {
+		logger.Error("failed to find veth peer host side", zap.String("Veth Name(host)", getHostVethName(containerId)), zap.Error(err))
+		return err
+	}
 	err = netns.Do(func(_ ns.NetNS) error {
 		logger.Debug("Add Neighborhood Table In Pod Side", zap.String("Netns Path", netns.Path()),
 			zap.String("Container defaultConVeth", defaultConVeth),
-			zap.String("hostVethLink Mac", hostInterface.Mac),
+			zap.String("hostInterface veth Mac", hostInterface.Mac),
+			zap.String("hostVethLink Mac", hostVethLink.Attrs().HardwareAddr.String()),
 			zap.Strings("Host IPs", hostIPs))
-		if err := neighborAdd(logger, defaultConVeth, hostInterface.Mac, hostIPs); err != nil {
+		if err := neighborAdd(logger, defaultConVeth, hostVethLink.Attrs().HardwareAddr.String(), hostIPs); err != nil {
 			logger.Error(err.Error())
 			return err
 		}
@@ -335,7 +347,7 @@ func setupNeighborhood(logger *zap.Logger, netns ns.NetNS, hostInterface, chaine
 
 // setupRoutes setup routes for pod and host
 // equivalent to: `ip route add $route`
-func setupRoutes(logger *zap.Logger, netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, routes []*types.Route, enableIpv4, enableIpv6 bool) error {
+func setupRoutes(logger *zap.Logger, netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, routes *ty.Route, enableIpv4, enableIpv6 bool) error {
 	var err error
 	// set routes for host
 	if _, _, err = utils.RouteAdd(logger, hostInterface.Name, conIPs, enableIpv4, enableIpv6); err != nil {
@@ -354,6 +366,7 @@ func setupRoutes(logger *zap.Logger, netns ns.NetNS, hostInterface, chainedInter
 
 		// setup custom routes from cni conf
 		// such as calico cidr, service cidr
+		// ip route add <route> via hostIP dev veth0
 		link, err := netlink.LinkByName(chainedInterface.Name)
 		if err != nil {
 			logger.Error(err.Error())
@@ -377,30 +390,50 @@ func setupRoutes(logger *zap.Logger, netns ns.NetNS, hostInterface, chainedInter
 				destHostIpv6 = &netIP
 			}
 		}
-
-		for _, route := range routes {
-			gw := net.IP{}
-			if route.Dst.IP.To4() != nil && enableIpv4 && destHostIpv4 != nil {
-				gw = *destHostIpv4
-			}
-			if route.Dst.IP.To4() == nil && enableIpv6 && destHostIpv6 != nil {
-				gw = *destHostIpv6
-			}
-			if len(gw) == 0 {
-				logger.Warn("the route given does not match the ipversion of the pod, ignore the creation of this route", zap.String("route", route.Dst.String()))
-				continue
-			}
-			if err = netlink.RouteAdd(&netlink.Route{
-				LinkIndex: link.Attrs().Index,
-				Dst:       &route.Dst,
-				Gw:        gw,
-			}); err != nil {
-				logger.Error("[pod side]failed to add route", zap.String("dst", route.Dst.String()), zap.String("gw", gw.String()), zap.Error(err))
-				return fmt.Errorf("[pod side] failed to add route: %v: %v ", route.Dst.String(), err)
-			}
+		if err = addSubnetRoute(logger, routes.ServiceSubnet, link.Attrs().Index, enableIpv4, enableIpv6, destHostIpv4, destHostIpv6); err != nil {
+			return err
 		}
+		logger.Debug("Succeed to add service subnet to pod side", zap.Strings("Service Subnet", routes.ServiceSubnet))
+		if err = addSubnetRoute(logger, routes.OverlaySubnet, link.Attrs().Index, enableIpv4, enableIpv6, destHostIpv4, destHostIpv6); err != nil {
+			return err
+		}
+		logger.Debug("Succeed to add overlay subnet to pod side", zap.Strings("Overlay CNI Subnet", routes.ServiceSubnet))
 
+		if err = addSubnetRoute(logger, routes.CustomSubnet, link.Attrs().Index, enableIpv4, enableIpv6, destHostIpv4, destHostIpv6); err != nil {
+			return err
+		}
 		return nil
 	})
 	return err
+}
+
+func addSubnetRoute(logger *zap.Logger, routes []string, linkIndex int, enableIpv4, enableIpv6 bool, destHostIpv4, destHostIpv6 *net.IP) error {
+	for _, route := range routes {
+		_, ipNet, err := net.ParseCIDR(route)
+		if err != nil {
+			logger.Error(err.Error())
+			return err
+		}
+
+		gw := net.IP{}
+		if ipNet.IP.To4() != nil && enableIpv4 && destHostIpv4 != nil {
+			gw = *destHostIpv4
+		}
+		if ipNet.IP.To4() == nil && enableIpv6 && destHostIpv6 != nil {
+			gw = *destHostIpv6
+		}
+		if len(gw) == 0 {
+			logger.Warn("the route given does not match the ipversion of the pod, ignore the creation of this route", zap.String("route", ipNet.String()))
+			continue
+		}
+		if err = netlink.RouteAdd(&netlink.Route{
+			LinkIndex: linkIndex,
+			Dst:       ipNet,
+			Gw:        gw,
+		}); err != nil {
+			logger.Error("[pod side]failed to add route", zap.String("dst", ipNet.String()), zap.String("gw", gw.String()), zap.Error(err))
+			return fmt.Errorf("[pod side] failed to add route: %v: %v ", ipNet.String(), err)
+		}
+	}
+	return nil
 }

@@ -29,3 +29,9 @@ type LogOptions struct {
 	LogFileMaxAge   *int   `json:"log_max_age"`
 	LogFileMaxCount *int   `json:"log_max_count"`
 }
+
+type Route struct {
+	OverlaySubnet []string `json:"overlay_subnet,omitempty"`
+	ServiceSubnet []string `json:"service_subnet,omitempty"`
+	CustomSubnet  []string `json:"custom_subnet,omitempty"`
+}
