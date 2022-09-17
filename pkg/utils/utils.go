@@ -2,7 +2,6 @@ package utils
 
 import (
 	"fmt"
-	ct "github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/containernetworking/plugins/pkg/utils/sysctl"
@@ -226,40 +225,58 @@ func EnableIpv6Sysctl(logger *zap.Logger, netns ns.NetNS, DefaultOverlayInterfac
 }
 
 // HijackCustomSubnet set ip rule : to Subnet table $routeTable
-func HijackCustomSubnet(logger *zap.Logger, netns ns.NetNS, routes []*ct.Route, routeTable int, enableIpv4, enableIpv6 bool) error {
+func HijackCustomSubnet(logger *zap.Logger, netns ns.NetNS, routes *types.Route, routeTable int, enableIpv4, enableIpv6 bool) error {
 	logger.Debug(fmt.Sprintf("Hijack Custom Subnet to %v ", routeTable), zap.String("Netns Path", netns.Path()),
 		zap.Bool("enableIpv4", enableIpv4),
 		zap.Bool("enableIpv6", enableIpv6))
 	e := netns.Do(func(_ ns.NetNS) error {
-		for _, route := range routes {
-
-			var family int
-			match := false
-			if route.Dst.IP.To4() != nil && enableIpv4 {
-				family = netlink.FAMILY_V4
-				match = true
-			}
-			if route.Dst.IP.To16() != nil && enableIpv6 {
-				family = netlink.FAMILY_V6
-				match = true
-			}
-
-			if !match {
-				logger.Warn("the route given does not match the ipVersion of the pod, ignore the creation of this route", zap.String("route", route.Dst.String()))
-				continue
-			}
-
-			rule := netlink.NewRule()
-			rule.Dst = &(route.Dst)
-			rule.Family = family
-			rule.Table = routeTable
-			logger.Debug("HijackCustomSubnet Add Rule table", zap.Int("ipfamily", family), zap.String("dst", rule.Dst.String()))
-			if err := netlink.RuleAdd(rule); err != nil {
-				logger.Error(err.Error())
-				return fmt.Errorf("failed to set ip rule(%+v rule.Dst %v): %+v", rule, rule.Dst, err)
-			}
+		var err error
+		if err = ruleAdd(logger, routes.OverlaySubnet, routeTable, enableIpv4, enableIpv6); err != nil {
+			return err
+		}
+		if err = ruleAdd(logger, routes.ServiceSubnet, routeTable, enableIpv4, enableIpv6); err != nil {
+			return err
+		}
+		if err = ruleAdd(logger, routes.CustomSubnet, routeTable, enableIpv4, enableIpv6); err != nil {
+			return err
 		}
 		return nil
 	})
 	return e
+}
+
+// ruleAdd
+func ruleAdd(logger *zap.Logger, routes []string, routeTable int, enableIpv4, enableIpv6 bool) error {
+	for _, route := range routes {
+		_, ipNet, err := net.ParseCIDR(route)
+		if err != nil {
+			return err
+		}
+		var family int
+		match := false
+		if ipNet.IP.To4() != nil && enableIpv4 {
+			family = netlink.FAMILY_V4
+			match = true
+		}
+		if ipNet.IP.To4() == nil && enableIpv6 {
+			family = netlink.FAMILY_V6
+			match = true
+		}
+
+		if !match {
+			logger.Warn("the route given does not match the ipVersion of the pod, ignore the creation of this route", zap.String("route", ipNet.String()))
+			continue
+		}
+
+		rule := netlink.NewRule()
+		rule.Dst = ipNet
+		rule.Family = family
+		rule.Table = routeTable
+		logger.Debug("HijackCustomSubnet Add Rule table", zap.Int("ipfamily", family), zap.String("dst", rule.Dst.String()))
+		if err := netlink.RuleAdd(rule); err != nil {
+			logger.Error(err.Error())
+			return fmt.Errorf("failed to set ip rule(%+v rule.Dst %v): %+v", rule, rule.Dst, err)
+		}
+	}
+	return nil
 }
