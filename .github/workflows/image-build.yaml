@@ -85,7 +85,7 @@ jobs:
           tags: ghcr.io/${{ github.repository }}/meta-plugins:${{ steps.tag.outputs.version }}
           file: ./images/Dockerfile
           github-token: ${{ secrets.WELAN_PAT }}
-          platforms: ${{ BUILD_PLATFORM }}
+          platforms: ${{ env.BUILD_PLATFORM }}
           build-args: |
             GIT_COMMIT_VERSION=${{ steps.arg.outputs.commitver }}
             GIT_COMMIT_TIME=${{ steps.arg.outputs.committime }}

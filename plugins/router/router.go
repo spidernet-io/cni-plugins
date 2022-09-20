@@ -24,9 +24,9 @@ import (
 type PluginConf struct {
 	types.NetConf
 	// should include: overlay Subnet , clusterIP subnet
-	Routes                  []*types.Route `json:"routes,omitempty"`
-	HijackOverlayResponse   *bool          `json:"hijack_overlay_response,omitempty"`
-	DefaultOverlayInterface string         `json:"overlay_interface,omitempty"`
+	Routes                  *ty.Route `json:"routes,omitempty" json:"routes,omitempty"`
+	HijackOverlayResponse   *bool     `json:"hijack_overlay_response,omitempty" `
+	DefaultOverlayInterface string    `json:"overlay_interface,omitempty"`
 	// RpFilter
 	RPFilter   *ty.RPFilter   `json:"rp_filter,omitempty"`
 	Skipped    bool           `json:"skip_call,omitempty"`
@@ -195,10 +195,12 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	// End previous result parsing
 
 	// some validation
-	for idx, route := range conf.Routes {
-		if route.Dst.IP == nil {
-			return nil, fmt.Errorf("[router] routes[%v]: des must be specified", idx)
-		}
+	if len(conf.Routes.OverlaySubnet) == 0 {
+		return nil, fmt.Errorf("must be given the subnet of overlay cni, such as calico or cilium")
+	}
+
+	if len(conf.Routes.ServiceSubnet) == 0 {
+		return nil, fmt.Errorf("must be given the subnet of clusterIP")
 	}
 
 	conf.LogOptions = logging.InitLogOptions(conf.LogOptions)
@@ -272,7 +274,6 @@ func moveRouteTable(logger *zap.Logger, iface string, ipfamily int) error {
 
 	for _, route := range routes {
 
-		logger.Debug("Found Route", zap.String("Route", route.String()))
 		// only handle route tables from table main
 		if route.Table != unix.RT_TABLE_MAIN {
 			continue
@@ -283,12 +284,15 @@ func moveRouteTable(logger *zap.Logger, iface string, ipfamily int) error {
 			continue
 		}
 
+		logger.Debug("Found Route", zap.String("Route", route.String()))
+
 		if route.LinkIndex == link.Attrs().Index {
 			if route.Dst == nil {
 				if err = netlink.RouteDel(&route); err != nil {
 					logger.Error("failed to delete default route  in main table ", zap.String("route", route.String()), zap.Error(err))
 					return fmt.Errorf("failed to delete default route (%+v) in main table: %+v", route, err)
 				}
+				logger.Debug("Succeed to del the default route", zap.String("Default Route", route.String()))
 			}
 			route.Table = overlayRouteTable
 			if err = netlink.RouteAdd(&route); err != nil {
@@ -306,7 +310,6 @@ func moveRouteTable(logger *zap.Logger, iface string, ipfamily int) error {
 
 			// get generated default Route for new table
 			for _, v := range route.MultiPath {
-				logger.Debug("MultiPath", zap.String("v", v.String()), zap.String("Link Index", string(rune(route.LinkIndex))))
 				if v.LinkIndex == link.Attrs().Index {
 					generatedRoute = &netlink.Route{
 						LinkIndex: v.LinkIndex,
