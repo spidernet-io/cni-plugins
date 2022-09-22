@@ -13,13 +13,14 @@ import (
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	bv "github.com/containernetworking/plugins/pkg/utils/buildversion"
+	"github.com/spidernet-io/cni-plugins/pkg/config"
 	"github.com/spidernet-io/cni-plugins/pkg/constant"
 	"github.com/spidernet-io/cni-plugins/pkg/logging"
 	ty "github.com/spidernet-io/cni-plugins/pkg/types"
 	"github.com/spidernet-io/cni-plugins/pkg/utils"
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
-	"k8s.io/utils/pointer"
+	"golang.org/x/sys/unix"
 	"net"
 	"os"
 	"path/filepath"
@@ -29,11 +30,14 @@ import (
 type PluginConf struct {
 	types.NetConf
 	// should include: overlay Subnet , clusterip subnet
-	Routes *ty.Route `json:"routes,omitempty"`
+	OverlayHijackSubnet    []string `json:"overlay_hijack_subnet,omitempty"`
+	ServiceHijackSubnet    []string `json:"service_hijack_subnet,omitempty"`
+	AdditionalHijackSubnet []string `json:"additional_hijack_subnet,omitempty"`
 	// RpFilter
-	RPFilter   *ty.RPFilter   `json:"rp_filter,omitempty"`
-	Skipped    bool           `json:"skip_call,omitempty"`
-	LogOptions *ty.LogOptions `json:"log_options,omitempty"`
+	RPFilter     *ty.RPFilter     `json:"rp_filter,omitempty" `
+	Skipped      bool             `json:"skip_call,omitempty"`
+	MigrateRoute *ty.MigrateRoute `json:"migrate_route,omitempty"`
+	LogOptions   *ty.LogOptions   `json:"log_options,omitempty"`
 }
 
 func init() {
@@ -116,14 +120,12 @@ func cmdAdd(args *skel.CmdArgs) error {
 		logger.Error(err.Error())
 		return err
 	}
-	preInterfaceName := prevResult.Interfaces[0].Name
-	if len(preInterfaceName) == 0 {
+	chainedInterface := prevResult.Interfaces[0].Name
+	if len(chainedInterface) == 0 {
 		err = fmt.Errorf("failed to find interface name from prevResult")
 		logger.Error(err.Error())
 		return err
 	}
-
-	logger.Debug("Pod IP Family", zap.Bool("ipv4", enableIpv4), zap.Bool("ipv6", enableIpv6))
 
 	// Pass the prevResult through this plugin to the next one
 	// result := prevResult
@@ -135,12 +137,16 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 	defer netns.Close()
 
-	// Check if the veth-plugin has been executed
-	// if so, skip it
 	isfirstInterface, e := utils.CheckInterfaceMiss(netns, defaultConVeth)
 	if e != nil {
 		logger.Error("failed to check first veth interface", zap.Error(e))
 		return fmt.Errorf("failed to check first veth interface: %v", e)
+	}
+
+	if !isfirstInterface {
+		logger.Info("Start call veth as the addon plugin", zap.Any("config", conf))
+	} else {
+		logger.Info("Start call veth as first plugin", zap.Any("config", conf))
 	}
 
 	// 1. setup veth pair
@@ -160,33 +166,51 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("failed to get host ips: %v", err)
 	}
 
-	// get ips from pod
-	conIPs, err := getChainedInterfaceIps(netns, preInterfaceName)
+	// get ips of this interface(preInterfaceName) from, including ipv4 and ipv6
+	conIPs, err := utils.GetChainedInterfaceIps(netns, chainedInterface, enableIpv4, enableIpv6)
 	if err != nil {
 		logger.Error(err.Error())
-		return fmt.Errorf("failed to find ip from chained interface %s : %v", preInterfaceName, err)
+		return fmt.Errorf("failed to find ip from chained interface %s : %v", chainedInterface, err)
 	}
-	logger.Info("Succeed to get ips from given interface inside container", zap.String("interface", preInterfaceName), zap.Strings("container ips", conIPs))
+
+	logger.Info("Succeed to get ips from given interface inside container", zap.String("interface", chainedInterface), zap.Strings("container ips", conIPs))
 
 	if enableIpv6 {
-		if err := utils.EnableIpv6Sysctl(logger, netns, defaultConVeth); err != nil {
+		if err := utils.EnableIpv6Sysctl(logger, netns); err != nil {
 			return err
 		}
 	}
 
 	// 2. setup neighborhood
-	if err = setupNeighborhood(logger, isfirstInterface, netns, hostInterface, conInterface, hostIPs, conIPs, args.ContainerID); err != nil {
+	if err = setupNeighborhood(logger, isfirstInterface, netns, chainedInterface, hostInterface, conInterface, hostIPs, conIPs, args.ContainerID); err != nil {
 		logger.Error(err.Error())
 		return err
+	}
+
+	ruleTable := unix.RT_TABLE_MAIN
+	if !isfirstInterface {
+		ruleTable = utils.GetRuleNumber(chainedInterface)
+		if ruleTable < 0 {
+			logger.Error("failed to get the number of rule table for interface", zap.String("interface", chainedInterface))
+			return fmt.Errorf("failed to get the number of rule table for interface %s", chainedInterface)
+		}
 	}
 
 	// 3. setup routes
-	if err = setupRoutes(logger, netns, hostInterface, conInterface, hostIPs, conIPs, conf.Routes, enableIpv4, enableIpv6); err != nil {
+	if err = setupRoutes(logger, netns, ruleTable, hostInterface, conInterface, hostIPs, conIPs, conf, enableIpv4, enableIpv6); err != nil {
 		logger.Error(err.Error())
 		return err
 	}
 
-	// 4. setup sysctl rp_filter
+	//4. migrate default route
+	if !isfirstInterface {
+		if err = utils.MigrateRoute(logger, netns, chainedInterface, chainedInterface, conIPs, *conf.MigrateRoute, ruleTable, enableIpv4, enableIpv6); err != nil {
+			logger.Error(err.Error())
+			return err
+		}
+	}
+
+	// 5. setup sysctl rp_filter
 	if err = utils.SysctlRPFilter(logger, netns, conf.RPFilter); err != nil {
 		logger.Error(err.Error())
 		return err
@@ -209,6 +233,7 @@ func cmdCheck(args *skel.CmdArgs) error {
 
 // parseConfig parses the supplied configuration (and prevResult) from stdin.
 func parseConfig(stdin []byte) (*PluginConf, error) {
+	var err error
 	conf := PluginConf{}
 
 	if err := json.Unmarshal(stdin, &conf); err != nil {
@@ -224,40 +249,16 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	}
 	// End previous result parsing
 
-	// some validation
-	if len(conf.Routes.OverlaySubnet) == 0 {
-		return nil, fmt.Errorf("the subnet of overlay cni(such as calico or cilium) must be given")
-	}
-
-	if len(conf.Routes.ServiceSubnet) == 0 {
-		return nil, fmt.Errorf("the subnet of service clusterip must be given")
+	if err = config.ValidateRoutes(conf.OverlayHijackSubnet, conf.ServiceHijackSubnet); err != nil {
+		return nil, err
 	}
 
 	// value must be 0/1/2
 	// If not, giving default value: RPFilter_Loose(2) to it
-	if conf.RPFilter != nil {
-		if conf.RPFilter.Enable != nil && *conf.RPFilter.Enable {
-			if conf.RPFilter.Value != nil {
-				matched := false
-				for _, value := range []int32{0, 1, 2} {
-					if *conf.RPFilter.Value == value {
-						matched = true
-					}
-				}
-				if !matched {
-					conf.RPFilter.Value = pointer.Int32(2)
-				}
-			} else {
-				conf.RPFilter.Value = pointer.Int32(2)
-			}
-		}
-	} else {
-		// give default value: RPFilter_Loose(2)
-		conf.RPFilter = &ty.RPFilter{
-			Enable: pointer.Bool(true),
-			Value:  pointer.Int32(2),
-		}
-	}
+	conf.RPFilter = config.ValidateRPFilterConfig(conf.RPFilter)
+
+	conf.MigrateRoute = config.ValidateMigrateRouteConfig(conf.MigrateRoute)
+
 	conf.LogOptions = logging.InitLogOptions(conf.LogOptions)
 	if conf.LogOptions.LogFilePath == "" {
 		conf.LogOptions.LogFilePath = constant.VethLogDefaultFilePath
@@ -268,17 +269,20 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 // setupVeth sets up a pair of virtual ethernet devices. It will create both veth
 // devices and move the host-side veth into the provided hostNS namespace.
 func setupVeth(logger *zap.Logger, netns ns.NetNS, isfirstInterface bool, containerID string, pr *current.Result) (*current.Interface, *current.Interface, error) {
-	if !isfirstInterface {
-		logger.Info("Veth-peer has already setup, skip it ")
-		return nil, nil, nil
-	}
-
-	hostInterface := &current.Interface{}
+	hostInterface := &current.Interface{Name: getHostVethName(containerID)}
 	containerInterface := &current.Interface{}
-
-	hostVethName := getHostVethName(containerID)
 	err := netns.Do(func(hostNS ns.NetNS) error {
-		hostVeth, contVeth0, err := ip.SetupVethWithName(defaultConVeth, hostVethName, defaultMtu, "", hostNS)
+		if !isfirstInterface {
+			link, err := netlink.LinkByName(defaultConVeth)
+			if err != nil {
+				return err
+			}
+			containerInterface.Mac = link.Attrs().HardwareAddr.String()
+			containerInterface.Name = defaultConVeth
+			logger.Info("Veth-peer has already setup, skip setupVeth ")
+			return nil
+		}
+		hostVeth, contVeth0, err := ip.SetupVethWithName(defaultConVeth, hostInterface.Name, defaultMtu, "", hostNS)
 		if err != nil {
 			return fmt.Errorf("[veth] failed to set veth peer: %v", err)
 		}
@@ -304,34 +308,33 @@ func setupVeth(logger *zap.Logger, netns ns.NetNS, isfirstInterface bool, contai
 
 // setupNeighborhood setup neighborhood tables for pod and host.
 // equivalent to: `ip neigh add ....`
-func setupNeighborhood(logger *zap.Logger, isfirstInterface bool, netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, containerId string) error {
+func setupNeighborhood(logger *zap.Logger, isfirstInterface bool, netns ns.NetNS, chainInterface string, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, containerId string) error {
 	var err error
 	// set neighborhood on host
-	logger.Debug("Add Neighborhood Table In Host Side", zap.String("Netns Path", netns.Path()),
+	logger.Debug("Add Neighborhood Table In Host Side",
 		zap.String("hostInterface name", hostInterface.Name),
 		zap.String("containerInterface Mac", chainedInterface.Mac),
-		zap.Strings("container IPs", conIPs))
-
-	//if !isfirstInterface {
-	//	//
-	//	logger.Debug("")
-	//}
+		zap.Any("container IPs", conIPs))
 
 	if err = neighborAdd(logger, hostInterface.Name, chainedInterface.Mac, conIPs); err != nil {
 		logger.Error(err.Error())
 		return err
 	}
+	if !isfirstInterface {
+		logger.Debug("Succeed to add neighbor table for interface", zap.String("chainInterface", chainInterface), zap.Strings("Container interface ips", conIPs))
+		return nil
+	}
 
 	// set up host veth Interface neighborhood in pod
 	// bug?: sometimes hostveth's mac not be correct, we get hosVeth's mac via LinkByName directly
-	hostVethLink, err := netlink.LinkByName(getHostVethName(containerId))
+	hostVethLink, err := netlink.LinkByName(hostInterface.Name)
 	if err != nil {
 		logger.Error("failed to find veth peer host side", zap.String("Veth Name(host)", getHostVethName(containerId)), zap.Error(err))
 		return err
 	}
 	err = netns.Do(func(_ ns.NetNS) error {
-		logger.Debug("Add Neighborhood Table In Pod Side", zap.String("Netns Path", netns.Path()),
-			zap.String("Container defaultConVeth", defaultConVeth),
+		logger.Debug("Add HostpIPs Neighborhood Table In Pod Side",
+			zap.String("defaultConVeth", defaultConVeth),
 			zap.String("hostInterface veth Mac", hostInterface.Mac),
 			zap.String("hostVethLink Mac", hostVethLink.Attrs().HardwareAddr.String()),
 			zap.Strings("Host IPs", hostIPs))
@@ -347,19 +350,25 @@ func setupNeighborhood(logger *zap.Logger, isfirstInterface bool, netns ns.NetNS
 
 // setupRoutes setup routes for pod and host
 // equivalent to: `ip route add $route`
-func setupRoutes(logger *zap.Logger, netns ns.NetNS, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, routes *ty.Route, enableIpv4, enableIpv6 bool) error {
+func setupRoutes(logger *zap.Logger, netns ns.NetNS, ruleTable int, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, conf *PluginConf, enableIpv4, enableIpv6 bool) error {
 	var err error
 	// set routes for host
-	if _, _, err = utils.RouteAdd(logger, hostInterface.Name, conIPs, enableIpv4, enableIpv6); err != nil {
+	// equivalent: ip add  <chainedIPs> dev veth-peer on host
+	if _, _, err = utils.RouteAdd(logger, unix.RT_TABLE_MAIN, hostInterface.Name, conIPs, enableIpv4, enableIpv6); err != nil {
 		logger.Error("[host side]", zap.Error(err))
 		return fmt.Errorf("[host side]: %v", err)
+	}
+	viaIPs, err := utils.GetNextHopIPs(conIPs)
+	if err != nil {
+		logger.Error(err.Error())
+		return err
 	}
 
 	// set routes for pod
 	err = netns.Do(func(_ ns.NetNS) error {
 		// add host ip route
-		// equiva to "ip r add hostIP dev veth"
-		if _, _, err = utils.RouteAdd(logger, chainedInterface.Name, hostIPs, enableIpv4, enableIpv6); err != nil {
+		// equiva to "ip r add hostIP dev veth0 table <ruleTable> "
+		if _, _, err = utils.RouteAdd(logger, ruleTable, chainedInterface.Name, hostIPs, enableIpv4, enableIpv6); err != nil {
 			logger.Error("[pod side]", zap.Error(err))
 			return fmt.Errorf("[pod side]: %v", err)
 		}
@@ -373,41 +382,42 @@ func setupRoutes(logger *zap.Logger, netns ns.NetNS, hostInterface, chainedInter
 			return err
 		}
 
-		// get one host ipv4 ip and one host ipv6 ip, as destination (if exist)
-		ipv4, ipv6 := false, false
-		viaIPs := make([]string, 0, 2)
-		for _, ip := range hostIPs {
-			netIP := net.ParseIP(ip)
-			ipv4, ipv6, viaIPs = filterIPs(netIP, ipv4, ipv6, viaIPs)
-		}
-
-		var destHostIpv4, destHostIpv6 *net.IP
+		var destHostIpv4, destHostIpv6 net.IP
 		for _, viaIP := range viaIPs {
-			netIP := net.ParseIP(viaIP)
-			if netIP.To4() != nil {
-				destHostIpv4 = &netIP
+			if viaIP.To4() != nil {
+				destHostIpv4 = viaIP
 			} else {
-				destHostIpv6 = &netIP
+				destHostIpv6 = viaIP
 			}
 		}
-		if err = addSubnetRoute(logger, routes.ServiceSubnet, link.Attrs().Index, enableIpv4, enableIpv6, destHostIpv4, destHostIpv6); err != nil {
-			return err
-		}
-		logger.Debug("Succeed to add service subnet to pod side", zap.Strings("Service Subnet", routes.ServiceSubnet))
-		if err = addSubnetRoute(logger, routes.OverlaySubnet, link.Attrs().Index, enableIpv4, enableIpv6, destHostIpv4, destHostIpv6); err != nil {
-			return err
-		}
-		logger.Debug("Succeed to add overlay subnet to pod side", zap.Strings("Overlay CNI Subnet", routes.ServiceSubnet))
 
-		if err = addSubnetRoute(logger, routes.CustomSubnet, link.Attrs().Index, enableIpv4, enableIpv6, destHostIpv4, destHostIpv6); err != nil {
+		if err = addSubnetRoute(logger, conf.ServiceHijackSubnet, ruleTable, link.Attrs().Index, enableIpv4, enableIpv6, &destHostIpv4, &destHostIpv6); err != nil {
 			return err
+		}
+		logger.Debug("Succeed to add service subnet to pod side", zap.Strings("Service Subnet", conf.ServiceHijackSubnet))
+
+		if err = addSubnetRoute(logger, conf.OverlayHijackSubnet, ruleTable, link.Attrs().Index, enableIpv4, enableIpv6, &destHostIpv4, &destHostIpv6); err != nil {
+			return err
+		}
+		logger.Debug("Succeed to add overlay subnet to pod side", zap.Strings("Overlay CNI Subnet", conf.OverlayHijackSubnet))
+
+		if err = addSubnetRoute(logger, conf.AdditionalHijackSubnet, ruleTable, link.Attrs().Index, enableIpv4, enableIpv6, &destHostIpv4, &destHostIpv6); err != nil {
+			return err
+		}
+
+		// As for more than two macvlan interface, we need to add something like below shown:
+		// eq: ip rule add to <chainedInterface subnet> lookup table <ruleTable>
+		if ruleTable != unix.RT_TABLE_MAIN {
+			if err = utils.AddToRuleTable(logger, conIPs, ruleTable, enableIpv4, enableIpv6); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
 	return err
 }
 
-func addSubnetRoute(logger *zap.Logger, routes []string, linkIndex int, enableIpv4, enableIpv6 bool, destHostIpv4, destHostIpv6 *net.IP) error {
+func addSubnetRoute(logger *zap.Logger, routes []string, ruleTable, linkIndex int, enableIpv4, enableIpv6 bool, destHostIpv4, destHostIpv6 *net.IP) error {
 	for _, route := range routes {
 		_, ipNet, err := net.ParseCIDR(route)
 		if err != nil {
@@ -416,21 +426,27 @@ func addSubnetRoute(logger *zap.Logger, routes []string, linkIndex int, enableIp
 		}
 
 		gw := net.IP{}
-		if ipNet.IP.To4() != nil && enableIpv4 && destHostIpv4 != nil {
-			gw = *destHostIpv4
-		}
-		if ipNet.IP.To4() == nil && enableIpv6 && destHostIpv6 != nil {
-			gw = *destHostIpv6
+		if ipNet.IP.To4() != nil {
+			if enableIpv4 && destHostIpv4 != nil {
+				gw = *destHostIpv4
+			}
+		} else {
+			if enableIpv6 && destHostIpv6 != nil {
+				gw = *destHostIpv6
+			}
 		}
 		if len(gw) == 0 {
-			logger.Warn("the route given does not match the ipversion of the pod, ignore the creation of this route", zap.String("route", ipNet.String()))
+			logger.Warn("the route given does not match the ip family of the pod, ignore the creation of this route", zap.String("route", ipNet.String()))
 			continue
 		}
+		logger.Debug("Netlink RouteAdd", zap.Int("LinkIndex", linkIndex), zap.Int("ruleTable", ruleTable), zap.String("Dst", ipNet.String()), zap.String("Gw", gw.String()))
+
 		if err = netlink.RouteAdd(&netlink.Route{
 			LinkIndex: linkIndex,
 			Dst:       ipNet,
 			Gw:        gw,
-		}); err != nil {
+			Table:     ruleTable,
+		}); err != nil && err.Error() != constant.ErrRouteFileExist {
 			logger.Error("[pod side]failed to add route", zap.String("dst", ipNet.String()), zap.String("gw", gw.String()), zap.Error(err))
 			return fmt.Errorf("[pod side] failed to add route: %v: %v ", ipNet.String(), err)
 		}

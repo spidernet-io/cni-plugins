@@ -5,6 +5,14 @@ import (
 	"net"
 )
 
+type MigrateRoute int32
+
+const (
+	MigrateAuto MigrateRoute = iota - 1
+	MigrateNever
+	MigrateEnable
+)
+
 type RPFilter struct {
 	// setup host rp_filter
 	Enable *bool `json:"set_host,omitempty"`
