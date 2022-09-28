@@ -67,7 +67,7 @@ jobs:
       if: ${{ steps.tag.outputs.upload == 'true' }}
       run: |
         sudo mkdir -p /home/plugins
-        cd ./.tmp/bin/${{ matrix.go_arch }}
+        cd ./.tmp/bin
         tar -cvzf /home/plugins/spider-cni-plugins-linux-${{ matrix.go_arch }}-${{ inputs.ref }}.tar *
 
     - name: Upload Binary artifact
