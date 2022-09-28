@@ -5,22 +5,26 @@ import (
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/containernetworking/plugins/pkg/utils/sysctl"
+	"github.com/spidernet-io/cni-plugins/pkg/constant"
 	"github.com/spidernet-io/cni-plugins/pkg/types"
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
+	"golang.org/x/sys/unix"
 	"k8s.io/utils/pointer"
 	"net"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
-// var defaultInterfaceName = "eth0"
-// var defaultMtu = 1500
-// var defaultConVeth = "veth0"
-var sysctlConfPath = "/proc/sys/net/ipv4/conf"
+var defaultInterfaceName = "eth0"
+var overlayRouteTable = 100
+var interfacePrefix = "net"
 
-// var disableIPv6SysctlTemplate = "net/ipv6/conf/%s/disable_ipv6"
+var sysctlConfPathIPv4 = "/proc/sys/net/ipv4/conf"
+var sysctlConfPathIPv6 = "/proc/sys/net/ipv6/conf"
+
 var ErrFileExists = "file exists"
 
 var DefaultInterfacesToExclude = []string{
@@ -64,10 +68,10 @@ func GetHostIps(logger *zap.Logger, enableIPv4, enableIpv6 bool) ([]string, erro
 					continue
 				}
 				if ip.To4() != nil && enableIPv4 {
-					ips = append(ips, ip.String())
+					ips = append(ips, addr.String())
 				}
 				if ip.To4() == nil && enableIpv6 {
-					ips = append(ips, ip.String())
+					ips = append(ips, addr.String())
 				}
 			}
 		}
@@ -81,9 +85,56 @@ func GetHostIps(logger *zap.Logger, enableIPv4, enableIpv6 bool) ([]string, erro
 	return ips, nil
 }
 
+// GetChainedInterfaceIps return all ip addresses on the NIC of a given netns, including ipv4 and ipv6
+func GetChainedInterfaceIps(netns ns.NetNS, interfacenName string, enableIPv4, enableIpv6 bool) ([]string, error) {
+	var err error
+	chainedInterfaceIps := make([]string, 0, 2)
+	err = netns.Do(func(_ ns.NetNS) error {
+		netInterfaces, err := net.Interfaces()
+		if err != nil {
+			return fmt.Errorf("failed to list container interfaces: %v", err)
+		}
+
+		for _, netInterface := range netInterfaces {
+			if netInterface.Name == interfacenName {
+				addrs, err := netInterface.Addrs()
+				if err != nil {
+					return fmt.Errorf("failed to list all address for interface %s: %v", netInterface.Name, err)
+				}
+				for _, addr := range addrs {
+					netIP, _, err := net.ParseCIDR(addr.String())
+					if err != nil {
+						return fmt.Errorf("failed to parse cidr %s: %v", addr.String(), err)
+					}
+					if netIP.IsMulticast() || netIP.IsLinkLocalUnicast() {
+						continue
+					}
+					if netIP.To4() != nil && enableIPv4 {
+						chainedInterfaceIps = append(chainedInterfaceIps, addr.String())
+					}
+					if netIP.To4() == nil && enableIpv6 {
+						chainedInterfaceIps = append(chainedInterfaceIps, addr.String())
+					}
+				}
+				break
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(chainedInterfaceIps) == 0 {
+		return nil, fmt.Errorf("no one vaild ip on the pod")
+	}
+	return chainedInterfaceIps, nil
+}
+
 // RouteAdd add route tables from given ips and iface
 // Equivalent: ip route add <dst> device <iface>
-func RouteAdd(logger *zap.Logger, iface string, ips []string, enableIpv4, enableIpv6 bool) (dst4 *net.IPNet, dst6 *net.IPNet, e error) {
+func RouteAdd(logger *zap.Logger, ruleTable int, iface string, ips []string, enableIpv4, enableIpv6 bool) (dst4 *net.IPNet, dst6 *net.IPNet, e error) {
 	logger.Debug("Add route table", zap.String("Device", iface),
 		zap.Strings("Destinations", ips),
 		zap.Bool("enableIpv4", enableIpv4),
@@ -93,31 +144,37 @@ func RouteAdd(logger *zap.Logger, iface string, ips []string, enableIpv4, enable
 		logger.Error(err.Error())
 		return nil, nil, err
 	}
+
 	for _, ip := range ips {
-		netIP := net.ParseIP(ip)
+		netIP, _, err := net.ParseCIDR(ip)
+		if err != nil {
+			logger.Error(err.Error())
+			return nil, nil, err
+		}
 		dst := &net.IPNet{
 			IP: netIP,
 		}
-		if netIP.To4() != nil {
-			if !enableIpv4 {
-				continue
-			}
+		if netIP.To4() != nil && enableIpv4 {
 			dst.Mask = net.CIDRMask(32, 32)
 			dst4 = dst
-		} else {
-			if !enableIpv6 {
-				continue
-			}
+		}
+		if netIP.To4() == nil && enableIpv6 {
 			dst.Mask = net.CIDRMask(128, 128)
 			dst6 = dst
+		}
+
+		if dst.Mask == nil {
+			logger.Warn("IP is don't match with the IP-Family", zap.String("IP", netIP.String()))
+			continue
 		}
 
 		if err = netlink.RouteAdd(&netlink.Route{
 			LinkIndex: link.Attrs().Index,
 			Scope:     netlink.SCOPE_LINK,
 			Dst:       dst,
-		}); err != nil && err.Error() != ErrFileExists {
-			logger.Error("failed to add route", zap.String("interface", iface), zap.String("dst", dst.String()), zap.Error(err))
+			Table:     ruleTable,
+		}); err != nil && err.Error() != constant.ErrFileExists {
+			logger.Error("failed to add route", zap.String("interface", iface), zap.String("dst", dst.IP.String()), zap.Error(err))
 			return nil, nil, err
 		}
 	}
@@ -154,10 +211,10 @@ func SysctlRPFilter(logger *zap.Logger, netns ns.NetNS, rp *types.RPFilter) erro
 // setRPFilter set rp_filter parameters
 func setRPFilter(logger *zap.Logger, v *int32) error {
 	if v == nil {
-		v = pointer.Int32(2)
+		v = pointer.Int32(0)
 	}
 	logger.Debug("Setting rp_filter", zap.Int32("value", *v))
-	dirs, err := os.ReadDir(sysctlConfPath)
+	dirs, err := os.ReadDir(sysctlConfPathIPv4)
 	if err != nil {
 		logger.Error(err.Error())
 		return err
@@ -169,11 +226,12 @@ func setRPFilter(logger *zap.Logger, v *int32) error {
 			logger.Warn("failed to get rp_filter value", zap.String("name", name), zap.Error(err))
 			continue
 		}
-		if value == "1" {
-			if _, e := sysctl.Sysctl(name, fmt.Sprintf("%d", *v)); e != nil {
-				logger.Error("failed to set rp_filter", zap.String("name", name), zap.Error(err))
-				return e
-			}
+		if value == fmt.Sprintf("%d", *v) {
+			continue
+		}
+		if _, e := sysctl.Sysctl(name, fmt.Sprintf("%d", *v)); e != nil {
+			logger.Error("failed to set rp_filter", zap.String("name", name), zap.Error(err))
+			return e
 		}
 	}
 	return nil
@@ -196,26 +254,28 @@ func CheckInterfaceMiss(netns ns.NetNS, intefaceName string) (bool, error) {
 	}
 }
 
-func EnableIpv6Sysctl(logger *zap.Logger, netns ns.NetNS, DefaultOverlayInterface string) error {
-	logger.Debug("Setting container sysctl 'disable_ipv6' to 0 ", zap.String("NetNs Path", netns.Path()),
-		zap.String("OverlayInterface", DefaultOverlayInterface))
+func EnableIpv6Sysctl(logger *zap.Logger, netns ns.NetNS) error {
+	logger.Debug("Setting all interface sysctl 'disable_ipv6' to 0 ", zap.String("NetNs Path", netns.Path()))
 	err := netns.Do(func(_ ns.NetNS) error {
-		allConf := []string{
-			fmt.Sprintf("net/ipv6/conf/%s/disable_ipv6", DefaultOverlayInterface),
-			"net/ipv6/conf/all/disable_ipv6",
+		dirs, err := os.ReadDir(sysctlConfPathIPv6)
+		if err != nil {
+			logger.Error(err.Error())
+			return err
 		}
-		for _, v := range allConf {
+
+		for _, dir := range dirs {
 			// Read current sysctl value
-			value, err := sysctl.Sysctl(v)
+			name := fmt.Sprintf("/net/ipv6/conf/%s/disable_ipv6", dir.Name())
+			value, err := sysctl.Sysctl(name)
 			if err != nil {
-				logger.Error("failed to read current sysctl value", zap.String("name", v), zap.Error(err))
-				return fmt.Errorf("failed to read current sysctl %+v value: %v", v, err)
+				logger.Error("failed to read current sysctl value", zap.String("name", name), zap.Error(err))
+				return fmt.Errorf("failed to read current sysctl %+v value: %v", name, err)
 			}
 			// make sure value=1
 			if value != "0" {
-				if _, err = sysctl.Sysctl(v, "0"); err != nil {
-					logger.Error("failed to set sysctl value to 0 ", zap.String("name", v), zap.Error(err))
-					return fmt.Errorf("failed to read current sysctl %+v value: %v ", v, err)
+				if _, err = sysctl.Sysctl(name, "0"); err != nil {
+					logger.Error("failed to set sysctl value to 0 ", zap.String("name", name), zap.Error(err))
+					return fmt.Errorf("failed to read current sysctl %+v value: %v ", name, err)
 				}
 			}
 		}
@@ -225,21 +285,37 @@ func EnableIpv6Sysctl(logger *zap.Logger, netns ns.NetNS, DefaultOverlayInterfac
 }
 
 // HijackCustomSubnet set ip rule : to Subnet table $routeTable
-func HijackCustomSubnet(logger *zap.Logger, netns ns.NetNS, routes *types.Route, routeTable int, enableIpv4, enableIpv6 bool) error {
+// if first macvlan interface, move service/pod subnet route to table 100: ip rule add from all to service/pod look table 100
+// else only move custom route to table <ruleTable>: ip rule add from all to <custom_subnet> look table <ruletable>
+func HijackCustomSubnet(logger *zap.Logger, netns ns.NetNS, serviceSubnet, overlaySubnet, additionalSubnet, chainedSubnet, defaultInterfaceIPs []string, routeTable int, enableIpv4, enableIpv6 bool) error {
 	logger.Debug(fmt.Sprintf("Hijack Custom Subnet to %v ", routeTable), zap.String("Netns Path", netns.Path()),
 		zap.Bool("enableIpv4", enableIpv4),
 		zap.Bool("enableIpv6", enableIpv6))
 	e := netns.Do(func(_ ns.NetNS) error {
 		var err error
-		if err = ruleAdd(logger, routes.OverlaySubnet, routeTable, enableIpv4, enableIpv6); err != nil {
+		// only first macvlan interface, we add rule table for it.
+		// eq: ip rule add from <overlay/service subnet> lookup <ruleTable>
+		if routeTable == overlayRouteTable {
+			if err = ruleAdd(logger, overlaySubnet, routeTable, enableIpv4, enableIpv6); err != nil {
+				return err
+			}
+			if err = ruleAdd(logger, serviceSubnet, routeTable, enableIpv4, enableIpv6); err != nil {
+				return err
+			}
+		} else {
+			// As for more than two macvlan interface, we need to add something like below shown:
+			// eq: ip rule add to <defaultInterfaceIPs > lookup table <ruleTable>
+			// net2: ip rule add to <net1 subnet> lookup table <ruleTable>
+			if err = ruleAdd(logger, defaultInterfaceIPs, routeTable, enableIpv4, enableIpv6); err != nil {
+				return err
+			}
+		}
+
+		// last we hijack additionalSubnet to lookup table <routeTable>
+		if err = ruleAdd(logger, additionalSubnet, routeTable, enableIpv4, enableIpv6); err != nil {
 			return err
 		}
-		if err = ruleAdd(logger, routes.ServiceSubnet, routeTable, enableIpv4, enableIpv6); err != nil {
-			return err
-		}
-		if err = ruleAdd(logger, routes.CustomSubnet, routeTable, enableIpv4, enableIpv6); err != nil {
-			return err
-		}
+
 		return nil
 	})
 	return e
@@ -250,6 +326,7 @@ func ruleAdd(logger *zap.Logger, routes []string, routeTable int, enableIpv4, en
 	for _, route := range routes {
 		_, ipNet, err := net.ParseCIDR(route)
 		if err != nil {
+			logger.Error(err.Error())
 			return err
 		}
 		var family int
@@ -273,10 +350,385 @@ func ruleAdd(logger *zap.Logger, routes []string, routeTable int, enableIpv4, en
 		rule.Family = family
 		rule.Table = routeTable
 		logger.Debug("HijackCustomSubnet Add Rule table", zap.Int("ipfamily", family), zap.String("dst", rule.Dst.String()))
-		if err := netlink.RuleAdd(rule); err != nil {
+		if err := netlink.RuleAdd(rule); err != nil && err.Error() != constant.ErrRouteFileExist {
 			logger.Error(err.Error())
 			return fmt.Errorf("failed to set ip rule(%+v rule.Dst %v): %+v", rule, rule.Dst, err)
 		}
 	}
 	return nil
+}
+
+// MigrateRoute make sure that the reply packets accessing the overlay interface are still sent from the overlay interface.
+func MigrateRoute(logger *zap.Logger, netns ns.NetNS, defaultInterface, chainedInterface string, defaultInterfaceIPs []string, value types.MigrateRoute, ruleTable int, enableIpv4, enableIpv6 bool) error {
+	/*
+		1. if migrateValue = -1, auto migrate route by interface name, if current_interface > last_interface by directory order, do migrate else nothing to do
+		2. if migrateValue = 1, do migrate directly
+		3. do migrate:
+		 		a. add rule table by given interface name: ip rule add from <interface>/32 lookup table <ruleTable>
+				b. move all route of given defaultInterface to table 100
+		4. end
+	*/
+	if value == types.MigrateNever {
+		return nil
+	}
+
+	var err error
+	var defaultRouteInterface string
+	if value == types.MigrateAuto {
+		if !compareInterfaceName(chainedInterface, defaultInterfaceName) {
+			logger.Info("Ignore migrate default route", zap.String("Current Interface", defaultInterface), zap.String("Default Route Interface", defaultRouteInterface))
+			return nil
+		}
+	}
+
+	logger.Debug("hijack overlay response packet to overlay interface",
+		zap.String("defaultRouteString", defaultInterface),
+		zap.Int32("migrate_route", int32(value)),
+		zap.Bool("enableIpv4", enableIpv4),
+		zap.Bool("enableIpv6", enableIpv6))
+	// add route rule: source overlayIP for new rule
+	// eq: ip rule add from <defaultRoute interface> lookup <ruleTable>
+	logger.Debug("Add Rule Table in Pod Netns", zap.Int("ruleTable", ruleTable), zap.Any("chainedIPs", defaultInterfaceIPs))
+	err = netns.Do(func(_ ns.NetNS) error {
+		if err = AddFromRuleTable(logger, defaultInterfaceIPs, ruleTable, enableIpv4, enableIpv6); err != nil {
+			logger.Error(fmt.Sprintf("failed to add route table %d: %v ", overlayRouteTable, err))
+			return err
+		}
+
+		return nil
+	})
+
+	// move overlay default route to table <ruleTable>
+	if enableIpv4 {
+		err := netns.Do(func(_ ns.NetNS) error {
+			return moveRouteTable(logger, defaultInterface, ruleTable, netlink.FAMILY_V4)
+		})
+		if err != nil {
+			logger.Error(err.Error())
+			return err
+		}
+	}
+	if enableIpv6 {
+		err := netns.Do(func(_ ns.NetNS) error {
+			return moveRouteTable(logger, defaultInterface, ruleTable, netlink.FAMILY_V6)
+		})
+		if err != nil {
+			logger.Error(err.Error())
+			return err
+		}
+	}
+	return nil
+}
+
+// AddFromRuleTable add route rule for calico/cilium cidr(ipv4 and ipv6)
+// Equivalent to: `ip rule add from  `
+func AddFromRuleTable(logger *zap.Logger, chainedIPs []string, ruleTable int, enableIpv4, enableIpv6 bool) error {
+	logger.Debug("Add FromRule Table in Pod Netns")
+	for _, chainedIP := range chainedIPs {
+		netIP, _, err := net.ParseCIDR(chainedIP)
+		if err != nil {
+			return fmt.Errorf("failed to parse cidr %s: %v", chainedIP, err)
+		}
+		if netIP.IsMulticast() || netIP.IsLinkLocalUnicast() {
+			continue
+		}
+		mask := net.IPMask{}
+		if netIP.To4() != nil && enableIpv4 {
+			mask = net.CIDRMask(32, 32)
+		}
+		if netIP.To4() == nil && enableIpv6 {
+			mask = net.CIDRMask(128, 128)
+		}
+
+		rule := netlink.NewRule()
+		rule.Table = ruleTable
+		rule.Src = &net.IPNet{
+			IP:   netIP,
+			Mask: mask,
+		}
+		logger.Debug("Netlink RuleAdd", zap.String("Rule", rule.String()))
+		if err := netlink.RuleAdd(rule); err != nil {
+			logger.Error(err.Error())
+			return err
+		}
+	}
+	// we should add rule route table, just like `ip route add default via 169.254.1.1 table 100`
+	// but we don't know what's the default route If it has been deleted.
+	// so we should add this route rule table before removing the default route
+	return nil
+}
+
+func AddrListByName(iface string, family int) ([]netlink.Addr, error) {
+	link, err := netlink.LinkByName(iface)
+	if err != nil {
+		return nil, err
+	}
+
+	addrs, err := netlink.AddrList(link, family)
+	if err != nil {
+		return nil, err
+	}
+	return addrs, nil
+}
+
+// AddToRuleTable
+func AddToRuleTable(logger *zap.Logger, chainedIPs []string, ruleTable int, enableIpv4, enableIpv6 bool) error {
+	for _, chainedIP := range chainedIPs {
+		netIP, ipNet, err := net.ParseCIDR(chainedIP)
+		if err != nil {
+			return fmt.Errorf("failed to parse cidr %s: %v", chainedIP, err)
+		}
+		if netIP.IsMulticast() || netIP.IsLinkLocalUnicast() {
+			continue
+		}
+
+		rule := netlink.NewRule()
+		rule.Table = ruleTable
+		rule.Dst = ipNet
+		logger.Debug("Netlink RuleAdd", zap.String("Rule", rule.String()))
+		if err = netlink.RuleAdd(rule); err != nil {
+			logger.Error(err.Error())
+			return err
+		}
+	}
+	// we should add rule route table, just like `ip route add default via 169.254.1.1 table 100`
+	// but we don't know what's the default route If it has been deleted.
+	// so we should add this route rule table before removing the default route
+	return nil
+}
+
+// moveRouteTable del default route and add default rule route in pod netns
+// Equivalent: `ip route del <default route>` and `ip r route add <default route> table 100`
+func moveRouteTable(logger *zap.Logger, iface string, ruleTable, ipfamily int) error {
+	logger.Debug(fmt.Sprintf("Moving overlay route table from main table to %d by given interface", ruleTable),
+		zap.String("interface", iface),
+		zap.Int("ipfamily", ipfamily))
+	link, err := netlink.LinkByName(iface)
+	if err != nil {
+		logger.Error(err.Error())
+		return err
+	}
+
+	routes, err := netlink.RouteList(nil, ipfamily)
+	if err != nil {
+		logger.Error(err.Error())
+		return err
+	}
+
+	for _, route := range routes {
+
+		// only handle route tables from table main
+		if route.Table != unix.RT_TABLE_MAIN {
+			continue
+		}
+
+		// ingore local link route
+		if route.Dst.String() == "fe80::/64" {
+			continue
+		}
+
+		logger.Debug("Found Route", zap.String("Route", route.String()))
+
+		if route.LinkIndex == link.Attrs().Index {
+			if route.Dst == nil {
+				if err = netlink.RouteDel(&route); err != nil {
+					logger.Error("failed to delete default route  in main table ", zap.String("route", route.String()), zap.Error(err))
+					return fmt.Errorf("failed to delete default route (%+v) in main table: %+v", route, err)
+				}
+				logger.Debug("Succeed to del the default route", zap.String("Default Route", route.String()))
+			}
+			route.Table = ruleTable
+			if err = netlink.RouteAdd(&route); err != nil && err.Error() != constant.ErrRouteFileExist {
+				logger.Error("failed to add default route to new table ", zap.String("route", route.String()), zap.Error(err))
+				return fmt.Errorf("failed to add route (%+v) to new table: %+v", route, err)
+			}
+			logger.Debug("Succeed to move default route table from main to new table", zap.String("Route", route.String()))
+		} else {
+			// especially more than two default ipv6 gateway
+			var generatedRoute, deletedRoute *netlink.Route
+			if len(route.MultiPath) == 0 {
+				continue
+			}
+
+			// get generated default Route for new table
+			for _, v := range route.MultiPath {
+				if v.LinkIndex == link.Attrs().Index {
+					generatedRoute = &netlink.Route{
+						LinkIndex: v.LinkIndex,
+						Gw:        v.Gw,
+						Table:     ruleTable,
+						MTU:       route.MTU,
+					}
+					deletedRoute = &netlink.Route{
+						LinkIndex: v.LinkIndex,
+						Gw:        v.Gw,
+						Table:     unix.RT_TABLE_MAIN,
+					}
+					break
+				}
+			}
+			if generatedRoute == nil {
+				continue
+			}
+			// add default route to new table
+			if err = netlink.RouteAdd(generatedRoute); err != nil && err.Error() != constant.ErrRouteFileExist {
+				logger.Error("failed to add overlay route to new table", zap.String("generatedRoute", generatedRoute.String()), zap.Error(err))
+				return fmt.Errorf("failed to move overlay route (%+v) to new table: %+v", generatedRoute, err)
+			}
+			// delete default route in main table
+			if err := netlink.RouteDel(deletedRoute); err != nil {
+				logger.Error("failed to del overlay route from main table", zap.String("deletedRoute", deletedRoute.String()), zap.Error(err))
+				return fmt.Errorf("failed to delete default route (%+v) in main table: %+v", deletedRoute, err)
+			}
+		}
+	}
+	return nil
+}
+
+// GetRuleNumber return the number of rule table corresponding to the previous interface from the given interface.
+// the input format must be 'net+number'
+// for example:
+// input: net1, output: 100(eth0)
+// input: net2, output: 101(net1)
+func GetRuleNumber(iface string) int {
+	if !strings.HasPrefix(iface, "net") {
+		return -1
+	}
+	numStr := strings.Trim(iface, "net")
+	num, err := strconv.Atoi(numStr)
+	if err != nil {
+		return -1
+	}
+	return overlayRouteTable + num - 1
+}
+
+// GetDefaultRouteInterface return last interface from given iface.
+// example:
+// input: net1, output: eth0
+// input: net2, output: net1
+// ...
+func GetDefaultRouteInterface(iface string) string {
+	if iface == "net1" {
+		return defaultInterfaceName
+	}
+	numStr := strings.Trim(iface, "net")
+	num, err := strconv.Atoi(numStr)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%s%d", "net", num-1)
+}
+
+// checkNeedMigrate compare the name of the current interface and default-route interface
+// by directory.
+// notice: base on there is only one default route in the main table
+func checkNeedMigrate(netNS ns.NetNS, current string) (bool, string, error) {
+	var err error
+	var defaultRouteInterface string
+	err = netNS.Do(func(_ ns.NetNS) error {
+		currentLink, err := netlink.LinkByName(current)
+		if err != nil {
+			return err
+		}
+
+		routes, err := netlink.RouteList(nil, netlink.FAMILY_V4)
+		if err != nil {
+			return err
+		}
+
+		var linkIndex int
+		for _, route := range routes {
+			if route.Table != unix.RT_TABLE_MAIN {
+				continue
+			}
+			if route.LinkIndex == currentLink.Attrs().Index {
+				continue
+			}
+			if route.Dst == nil {
+				// found the default route
+				linkIndex = route.LinkIndex
+				break
+			}
+		}
+
+		link, err := netlink.LinkByIndex(linkIndex)
+		if err != nil {
+			return err
+		}
+		defaultRouteInterface = link.Attrs().Name
+		return nil
+	})
+	if err != nil {
+		return false, "", err
+	}
+	if len(defaultRouteInterface) == 0 {
+		return false, "", fmt.Errorf("unable to find the interface with the default route")
+	}
+	return compareInterfaceName(current, defaultRouteInterface), defaultRouteInterface, nil
+}
+
+// compareInterfaceName compare name from given current and prev by directory order
+// example:
+// net1 > eth0, true
+// net2 > net1, true
+func compareInterfaceName(current, prev string) bool {
+	if prev == defaultInterfaceName {
+		return true
+	}
+
+	if !strings.HasPrefix(current, interfacePrefix) || !strings.HasPrefix(prev, interfacePrefix) {
+		return false
+	}
+	return current >= prev
+}
+
+func GetNextHopIPs(ips []string) ([]net.IP, error) {
+	viaIPs := make([]net.IP, 0, 2)
+	for _, ip := range ips {
+		netIP, _, err := net.ParseCIDR(ip)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse cidr %s: %v", ip, err)
+		}
+		routes, err := netlink.RouteGet(netIP)
+		if err != nil {
+			return nil, fmt.Errorf("failed to ip route get %s: %v", ip, err)
+		}
+		for _, route := range routes {
+			viaIPs = append(viaIPs, route.Src)
+		}
+	}
+	if len(viaIPs) == 0 {
+		return nil, fmt.Errorf("nexthoop ips no found on host")
+	}
+	return viaIPs, nil
+}
+
+func RuleDel(netNS ns.NetNS, logger *zap.Logger, ruleTable int, ip string) error {
+	logger.Debug("Del Rule Table", zap.Int("RuleTable", ruleTable), zap.String("ChainedInterface IP", ip))
+	netIP, _, err := net.ParseCIDR(ip)
+	if err != nil {
+		logger.Error("failed to del rule table", zap.Error(err))
+		return fmt.Errorf("failed to del rule table %d : %v", ruleTable, err)
+	}
+	dst := &net.IPNet{
+		IP: netIP,
+	}
+	dst.Mask = net.IPMask{}
+	var family int
+	if netIP.To4() != nil {
+		dst.Mask = net.CIDRMask(32, 32)
+	}
+	if netIP.To4() == nil {
+		dst.Mask = net.CIDRMask(128, 128)
+	}
+
+	rule := netlink.NewRule()
+	rule.Family = family
+	rule.Dst = dst
+	rule.Table = ruleTable
+	if err = netlink.RuleDel(rule); err != nil {
+		logger.Error("failed to del rule table", zap.Error(err))
+		return fmt.Errorf("failed to del rule table %d: %v ", ruleTable, err)
+	}
+	return err
 }

@@ -5,49 +5,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 	"net"
 )
 
 var defaultMtu = 1500
-
-// getChainedInterfaceIps return all ip addresses on the NIC of a given netns, including ipv4 and ipv6
-func getChainedInterfaceIps(netns ns.NetNS, interfacenName string) ([]string, error) {
-	ips := make([]string, 0, 2)
-	err := netns.Do(func(_ ns.NetNS) error {
-		ipv4, ipv6 := false, false
-		ifaces, err := net.Interfaces()
-		if err != nil {
-			return fmt.Errorf("[veth] failed to list interfaces inside pod")
-		}
-		for _, iface := range ifaces {
-			if iface.Name == interfacenName {
-				addrs, err := iface.Addrs()
-				if err != nil {
-					return err
-				}
-				for _, addr := range addrs {
-					ip, _, err := net.ParseCIDR(addr.String())
-					if err != nil {
-						return err
-					}
-					ipv4, ipv6, ips = filterIPs(ip, ipv4, ipv6, ips)
-				}
-				break
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if len(ips) == 0 {
-		return nil, fmt.Errorf("[veth] no one vaild ip on the pod")
-	}
-	return ips, nil
-}
 
 // neighborAdd add static neighborhood tales
 func neighborAdd(logger *zap.Logger, iface, mac string, ips []string) error {
@@ -58,11 +21,16 @@ func neighborAdd(logger *zap.Logger, iface, mac string, ips []string) error {
 
 	// add host neighborhood in pod
 	for _, ip := range ips {
+		netIP, _, err := net.ParseCIDR(ip)
+		if err != nil {
+			logger.Error(err.Error())
+			return err
+		}
 		neigh := &netlink.Neigh{
 			LinkIndex:    link.Attrs().Index,
 			State:        netlink.NUD_PERMANENT,
 			Type:         netlink.NDA_LLADDR,
-			IP:           net.ParseIP(ip),
+			IP:           netIP,
 			HardwareAddr: parseMac(mac),
 		}
 		if err := netlink.NeighAdd(neigh); err != nil && err.Error() != "file exists" {

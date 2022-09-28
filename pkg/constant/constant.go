@@ -10,6 +10,10 @@ var DefaultInterfacesToExclude = []string{
 	"cali.*", "tunl.*", "flannel.*", "kube-ipvs.*", "cni.*",
 }
 
+var OverlayRouteTable = 100
+
+var ErrRouteFileExist string = "file exists"
+
 // Log level character string
 const (
 	LogDebugLevelStr = "debug"
