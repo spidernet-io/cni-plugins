@@ -131,14 +131,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 	defer netns.Close()
 
-	// -----------------  Add route table in pod ns
-	if enableIpv6 {
-		if err = utils.EnableIpv6Sysctl(logger, netns); err != nil {
-			logger.Error(err.Error())
-			return err
-		}
-	}
-
 	chainedInterfaceIps, err := utils.GetChainedInterfaceIps(netns, preInterfaceName, enableIpv4, enableIpv6)
 	if err != nil {
 		logger.Error(err.Error())
@@ -181,6 +173,19 @@ func cmdAdd(args *skel.CmdArgs) error {
 	if err = utils.MigrateRoute(logger, netns, utils.GetDefaultRouteInterface(preInterfaceName), preInterfaceName, defaultInterfaceIPs, *conf.MigrateRoute, ruleTable, enableIpv4, enableIpv6); err != nil {
 		logger.Error(err.Error())
 		return err
+	}
+
+	// -----------------  Add route table in pod ns
+	if enableIpv6 {
+		if err = utils.EnableIpv6Sysctl(logger, netns); err != nil {
+			logger.Error(err.Error())
+			return err
+		}
+		// setup negiborhood to fix ipv6 communication issue( pod and host )
+		if err = utils.AddNeighTableForIPv6(logger, netns, conf.DefaultOverlayInterface, chainedInterfaceIps); err != nil {
+			logger.Error(err.Error())
+			return err
+		}
 	}
 
 	// setup sysctl rp_filter
