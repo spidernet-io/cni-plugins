@@ -12,9 +12,9 @@ import (
 var LoggerFile *zap.Logger
 
 const (
-	DefaultLogFileMaxSize    int = 100
-	DefaultLogFileMaxAge         = 30
-	DefaultLogFileMaxBackups     = 10
+	DefaultLogFileMaxSize    = 100
+	DefaultLogFileMaxAge     = 30
+	DefaultLogFileMaxBackups = 10
 )
 
 const (
@@ -43,8 +43,7 @@ func SetLogOptions(options *types.LogOptions) error {
 	v := logutils.ConvertLogLevel(options.LogLevel)
 	if v == nil {
 		// wrong logging level, give default level
-		var logLevel zapcore.Level
-		logLevel = zap.InfoLevel
+		logLevel := zap.InfoLevel
 		v = &logLevel
 	}
 

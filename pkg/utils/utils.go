@@ -619,54 +619,6 @@ func GetDefaultRouteInterface(iface string) string {
 	return fmt.Sprintf("%s%d", "net", num-1)
 }
 
-// checkNeedMigrate compare the name of the current interface and default-route interface
-// by directory.
-// notice: base on there is only one default route in the main table
-func checkNeedMigrate(netNS ns.NetNS, current string) (bool, string, error) {
-	var err error
-	var defaultRouteInterface string
-	err = netNS.Do(func(_ ns.NetNS) error {
-		currentLink, err := netlink.LinkByName(current)
-		if err != nil {
-			return err
-		}
-
-		routes, err := netlink.RouteList(nil, netlink.FAMILY_V4)
-		if err != nil {
-			return err
-		}
-
-		var linkIndex int
-		for _, route := range routes {
-			if route.Table != unix.RT_TABLE_MAIN {
-				continue
-			}
-			if route.LinkIndex == currentLink.Attrs().Index {
-				continue
-			}
-			if route.Dst == nil {
-				// found the default route
-				linkIndex = route.LinkIndex
-				break
-			}
-		}
-
-		link, err := netlink.LinkByIndex(linkIndex)
-		if err != nil {
-			return err
-		}
-		defaultRouteInterface = link.Attrs().Name
-		return nil
-	})
-	if err != nil {
-		return false, "", err
-	}
-	if len(defaultRouteInterface) == 0 {
-		return false, "", fmt.Errorf("unable to find the interface with the default route")
-	}
-	return compareInterfaceName(current, defaultRouteInterface), defaultRouteInterface, nil
-}
-
 // compareInterfaceName compare name from given current and prev by directory order
 // example:
 // net1 > eth0, true
@@ -731,4 +683,124 @@ func RuleDel(netNS ns.NetNS, logger *zap.Logger, ruleTable int, ip string) error
 		return fmt.Errorf("failed to del rule table %d: %v ", ruleTable, err)
 	}
 	return err
+}
+
+// AddNeighTableForIPv6 fix the problem of ipv6 communication failure between pods and hosts by adding neigh table on pod and host
+func AddNeighTableForIPv6(logger *zap.Logger, netns ns.NetNS, defaultOverlayInterface string, chainedInterfaceIps []string) error {
+	parentIndex := -1
+	defaultOverlayMac := ""
+	hostIPs, err := GetHostIps(logger, false, true)
+	if err != nil {
+		logger.Error("", zap.Error(err))
+		return err
+	}
+
+	err = netns.Do(func(_ ns.NetNS) error {
+		link, err := netlink.LinkByName(defaultOverlayInterface)
+		if err != nil {
+			logger.Error("", zap.Error(err))
+			return err
+		}
+		// get link index of host veth-peer and pod veth-peer mac-address
+		parentIndex = link.Attrs().ParentIndex
+		defaultOverlayMac = link.Attrs().HardwareAddr.String()
+		return nil
+	})
+	if err != nil {
+		logger.Error(err.Error())
+		return err
+	}
+
+	if parentIndex < 0 {
+		logger.Debug("defaultOverlay veth-peer linkIndex no found, ignore add neigh table")
+		return nil
+	}
+
+	if defaultOverlayMac == "" {
+		logger.Debug("defaultOverlayInterface Mac-address still empty, ignore add neigh table")
+		return nil
+	}
+
+	hostLink, err := netlink.LinkByIndex(parentIndex)
+	if err != nil {
+		logger.Error("", zap.Error(err))
+		return err
+	}
+
+	// add neigh table in pod
+	// eq: ip n add <host IP> dev eth0 lladdr <host veth-peer mac> nud permanent
+	// only for ipv6
+	err = netns.Do(func(_ ns.NetNS) error {
+		for _, hostIP := range hostIPs {
+			if err := NeighborAdd(logger, defaultOverlayInterface, hostLink.Attrs().HardwareAddr.String(), hostIP); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		logger.Error(err.Error())
+		return err
+	}
+
+	// eq: ip n add <chained interface IP> dev <host veth-peer > lladdr < defaultInterface Mac> nud permanent (only for ipv6)
+	for _, chainedInterfaceIP := range chainedInterfaceIps {
+		netIP, _, err := net.ParseCIDR(chainedInterfaceIP)
+		if err != nil {
+			logger.Error(err.Error())
+			return err
+		}
+		if netIP.To4() == nil {
+			dst := &net.IPNet{
+				IP: netIP,
+			}
+			dst.Mask = net.IPMask{}
+			dst.Mask = net.CIDRMask(128, 128)
+			if err = NeighborAdd(logger, hostLink.Attrs().Name, defaultOverlayMac, dst.String()); err != nil {
+				logger.Error(err.Error())
+				return err
+			}
+			break
+		}
+	}
+	logger.Debug("succeed to add neighbor table for ipv6", zap.Strings("host ipv6 ips", hostIPs))
+	return nil
+}
+
+// NeighborAdd add static neighborhood tales
+func NeighborAdd(logger *zap.Logger, iface, mac string, ipStr string) error {
+	link, err := netlink.LinkByName(iface)
+	if err != nil {
+		return fmt.Errorf("failed to get link: %v", err)
+	}
+
+	// add host neighborhood in pod
+	netIP, _, err := net.ParseCIDR(ipStr)
+	if err != nil {
+		logger.Error(err.Error())
+		return err
+	}
+	neigh := &netlink.Neigh{
+		LinkIndex:    link.Attrs().Index,
+		State:        netlink.NUD_PERMANENT,
+		Type:         netlink.NDA_LLADDR,
+		IP:           netIP,
+		HardwareAddr: parseMac(mac),
+	}
+	if err := netlink.NeighAdd(neigh); err != nil && err.Error() != "file exists" {
+		logger.Error("failed to add neigh table", zap.String("interface", iface), zap.String("neigh", neigh.String()), zap.Error(err))
+		return fmt.Errorf("failed to add neigh table: %v ", err)
+	}
+
+	return nil
+}
+
+// parseMac parse hardware addr from given string
+func parseMac(s string) net.HardwareAddr {
+	hardwareAddr, err := net.ParseMAC(s)
+	if err != nil {
+		panic(err)
+	}
+	return hardwareAddr
 }

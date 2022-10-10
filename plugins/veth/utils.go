@@ -6,40 +6,10 @@ package main
 import (
 	"fmt"
 	"github.com/vishvananda/netlink"
-	"go.uber.org/zap"
 	"net"
 )
 
 var defaultMtu = 1500
-
-// neighborAdd add static neighborhood tales
-func neighborAdd(logger *zap.Logger, iface, mac string, ips []string) error {
-	link, err := netlink.LinkByName(iface)
-	if err != nil {
-		return fmt.Errorf("failed to get link: %v", err)
-	}
-
-	// add host neighborhood in pod
-	for _, ip := range ips {
-		netIP, _, err := net.ParseCIDR(ip)
-		if err != nil {
-			logger.Error(err.Error())
-			return err
-		}
-		neigh := &netlink.Neigh{
-			LinkIndex:    link.Attrs().Index,
-			State:        netlink.NUD_PERMANENT,
-			Type:         netlink.NDA_LLADDR,
-			IP:           netIP,
-			HardwareAddr: parseMac(mac),
-		}
-		if err := netlink.NeighAdd(neigh); err != nil && err.Error() != "file exists" {
-			logger.Error("failed to add neigh table", zap.String("interface", iface), zap.String("neigh", neigh.String()), zap.Error(err))
-			return fmt.Errorf("failed to add neigh table: %v ", err)
-		}
-	}
-	return nil
-}
 
 // setLinkup set the given interface to up.
 func setLinkup(iface string) error {
@@ -78,15 +48,6 @@ func setRPFilter() error {
 	return nil
 }
 */
-
-// parseMac parse hardware addr from given string
-func parseMac(s string) net.HardwareAddr {
-	hardwareAddr, err := net.ParseMAC(s)
-	if err != nil {
-		panic(err)
-	}
-	return hardwareAddr
-}
 
 // filterIPs filter
 // If the same ip family has multiple ip addresses, then only the first one returned.
