@@ -316,9 +316,11 @@ func setupNeighborhood(logger *zap.Logger, isfirstInterface bool, netns ns.NetNS
 		zap.String("containerInterface Mac", chainedInterface.Mac),
 		zap.Any("container IPs", conIPs))
 
-	if err = neighborAdd(logger, hostInterface.Name, chainedInterface.Mac, conIPs); err != nil {
-		logger.Error(err.Error())
-		return err
+	for _, conIP := range conIPs {
+		if err = utils.NeighborAdd(logger, hostInterface.Name, chainedInterface.Mac, conIP); err != nil {
+			logger.Error(err.Error())
+			return err
+		}
 	}
 	if !isfirstInterface {
 		logger.Debug("Succeed to add neighbor table for interface", zap.String("chainInterface", chainInterface), zap.Strings("Container interface ips", conIPs))
@@ -338,9 +340,11 @@ func setupNeighborhood(logger *zap.Logger, isfirstInterface bool, netns ns.NetNS
 			zap.String("hostInterface veth Mac", hostInterface.Mac),
 			zap.String("hostVethLink Mac", hostVethLink.Attrs().HardwareAddr.String()),
 			zap.Strings("Host IPs", hostIPs))
-		if err := neighborAdd(logger, defaultConVeth, hostVethLink.Attrs().HardwareAddr.String(), hostIPs); err != nil {
-			logger.Error(err.Error())
-			return err
+		for _, hostIP := range hostIPs {
+			if err := utils.NeighborAdd(logger, defaultConVeth, hostVethLink.Attrs().HardwareAddr.String(), hostIP); err != nil {
+				logger.Error(err.Error())
+				return err
+			}
 		}
 		return nil
 	})
