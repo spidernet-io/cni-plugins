@@ -11,3 +11,4 @@ WORKDIR /
 ADD ./images/entrypoint.sh /
 
 ENTRYPOINT ["/entrypoint.sh"]
+
