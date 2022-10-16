@@ -56,7 +56,7 @@ func neighborAdd(logger *zap.Logger, iface, mac string, ips []string) error {
 		return fmt.Errorf("failed to get link: %v", err)
 	}
 
-	// add host neighborhood in pod
+	//  add host neighborhood in pod
 	for _, ip := range ips {
 		neigh := &netlink.Neigh{
 			LinkIndex:    link.Attrs().Index,
