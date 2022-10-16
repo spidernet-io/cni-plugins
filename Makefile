@@ -29,8 +29,12 @@ lint_image_trivy:
 	@ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
  		  -v /tmp/trivy:/root/trivy.cache/  \
           aquasec/trivy:latest image --exit-code 1  --severity $(LINT_TRIVY_SEVERITY_LEVEL)  $(IMAGE_NAME) ; \
-      (($$?==0)) || { echo "error, failed to check dockerfile trivy", $(IMAGE_NAME)  && exit 1 ; } ; \
-      echo "trivy check: $(IMAGE_NAME) pass"
+      if (($$?==0))  ; then  \
+            echo "image trivy check: pass" ; \
+      else \
+           echo "error, failed to check image trivy" ; \
+	   exit 1 ; \
+      fi
 
 
 .PHONY: lint_chart_trivy
@@ -39,8 +43,13 @@ lint_chart_trivy:
  		  -v /tmp/trivy:/root/trivy.cache/  \
           -v $(ROOT_DIR):/tmp/src  \
           aquasec/trivy:latest config --exit-code 1  --severity $(LINT_TRIVY_SEVERITY_LEVEL) /tmp/src/charts  ; \
-      (($$?==0)) || { echo "error, failed to check chart trivy" && exit 1 ; } ; \
-      echo "chart trivy check: pass"
+      if (($$?==0))  ; then  \
+            echo "chart trivy check: pass" ; \
+      else \
+           echo "error, failed to check chart trivy" ; \
+	   exit 1 ; \
+      fi
+
 
 
 .PHONY: lint_dockerfile_trivy
@@ -49,7 +58,10 @@ lint_dockerfile_trivy:
  		  -v /tmp/trivy:/root/trivy.cache/  \
           -v $(ROOT_DIR):/tmp/src  \
           aquasec/trivy:latest config --exit-code 1  --severity $(LINT_TRIVY_SEVERITY_LEVEL) /tmp/src/images  ; \
-      (($$?==0)) || { echo "error, failed to check dockerfile trivy" && exit 1 ; } ; \
-      echo "dockerfile trivy check: pass"
-
+      if (($$?==0))  ; then  \
+            echo "dockerfile trivy check: pass" ; \
+      else \
+           echo "error, failed to check dockerfile trivy" ; \
+	   exit 1 ; \
+      fi
 
