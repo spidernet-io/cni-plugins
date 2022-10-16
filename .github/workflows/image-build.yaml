@@ -111,4 +111,4 @@ jobs:
         if: ${{ steps.tag.outputs.push != 'true' }}
         run: |
           docker images
-          make lint_image_trivy
+          make lint_image_trivy -e IMAGE_NAME=ghcr.io/${{ github.repository }}/meta-plugins:${{ steps.tag.outputs.version }}
