@@ -7,6 +7,7 @@ import (
 )
 
 func ValidateRPFilterConfig(config *ty.RPFilter) *ty.RPFilter {
+	
 	if config == nil {
 		return &ty.RPFilter{
 			Enable: pointer.Bool(true),
