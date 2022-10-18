@@ -356,13 +356,7 @@ func setupNeighborhood(logger *zap.Logger, isfirstInterface bool, netns ns.NetNS
 // equivalent to: `ip route add $route`
 func setupRoutes(logger *zap.Logger, netns ns.NetNS, ruleTable int, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, conf *PluginConf, enableIpv4, enableIpv6 bool) error {
 	var err error
-	// set routes for host
-	// equivalent: ip add  <chainedIPs> dev veth-peer on host
-	if _, _, err = utils.RouteAdd(logger, unix.RT_TABLE_MAIN, hostInterface.Name, conIPs, enableIpv4, enableIpv6); err != nil {
-		logger.Error("[host side]", zap.Error(err))
-		return fmt.Errorf("[host side]: %v", err)
-	}
-	viaIPs, err := utils.GetNextHopIPs(conIPs)
+	viaIPs, err := utils.GetNextHopIPs(logger, conIPs)
 	if err != nil {
 		logger.Error(err.Error())
 		return err
@@ -418,6 +412,13 @@ func setupRoutes(logger *zap.Logger, netns ns.NetNS, ruleTable int, hostInterfac
 		}
 		return nil
 	})
+	// set routes for host
+	// equivalent: ip add  <chainedIPs> dev veth-peer on host
+	if _, _, err = utils.RouteAdd(logger, unix.RT_TABLE_MAIN, hostInterface.Name, conIPs, enableIpv4, enableIpv6); err != nil {
+		logger.Error("[host side]", zap.Error(err))
+		return fmt.Errorf("[host side]: %v", err)
+	}
+
 	return err
 }
 

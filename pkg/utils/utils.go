@@ -634,20 +634,24 @@ func compareInterfaceName(current, prev string) bool {
 	return current >= prev
 }
 
-func GetNextHopIPs(ips []string) ([]net.IP, error) {
+func GetNextHopIPs(logger *zap.Logger, ips []string) ([]net.IP, error) {
 	viaIPs := make([]net.IP, 0, 2)
 	for _, ip := range ips {
 		netIP, _, err := net.ParseCIDR(ip)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse cidr %s: %v", ip, err)
 		}
+		logger.Debug("destination IP", zap.Any("dst", netIP))
 		routes, err := netlink.RouteGet(netIP)
 		if err != nil {
 			return nil, fmt.Errorf("failed to ip route get %s: %v", ip, err)
 		}
+
 		for _, route := range routes {
 			viaIPs = append(viaIPs, route.Src)
+			break
 		}
+
 	}
 	if len(viaIPs) == 0 {
 		return nil, fmt.Errorf("nexthoop ips no found on host")
