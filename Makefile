@@ -23,3 +23,28 @@ lint-golang:
 .PHONY: test
 test:
 	make -C test/test
+
+.PHONY: lint_image_trivy
+lint_image_trivy: IMAGE_NAME ?=
+lint_image_trivy:
+	@ [ -n "$(IMAGE_NAME)" ] || { echo "error, please input IMAGE_NAME" && exit 1 ; }
+	@ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+ 		  -v /tmp/trivy:/root/trivy.cache/  \
+          aquasec/trivy:latest image --exit-code 1  --severity $(LINT_TRIVY_SEVERITY_LEVEL)  $(IMAGE_NAME)
+
+
+.PHONY: lint_chart_trivy
+lint_chart_trivy:
+	@ docker run --rm \
+ 		  -v /tmp/trivy:/root/trivy.cache/  \
+          -v $(ROOT_DIR):/tmp/src  \
+          aquasec/trivy:latest config --exit-code 1  --severity $(LINT_TRIVY_SEVERITY_LEVEL) /tmp/src/charts
+
+
+.PHONY: lint_dockerfile_trivy
+lint_dockerfile_trivy:
+	@ docker run --rm \
+ 		  -v /tmp/trivy:/root/trivy.cache/  \
+          -v $(ROOT_DIR):/tmp/src  \
+          aquasec/trivy:latest config --exit-code 1  --severity $(LINT_TRIVY_SEVERITY_LEVEL) /tmp/src/images
+

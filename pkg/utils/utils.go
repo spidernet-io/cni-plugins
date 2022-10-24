@@ -26,6 +26,7 @@ var sysctlConfPathIPv4 = "/proc/sys/net/ipv4/conf"
 var sysctlConfPathIPv6 = "/proc/sys/net/ipv6/conf"
 
 var ErrFileExists = "file exists"
+var ErrFileNotFound = "no such file or directory"
 
 var DefaultInterfacesToExclude = []string{
 	"docker.*", "cbr.*", "dummy.*",
@@ -682,7 +683,7 @@ func RuleDel(netNS ns.NetNS, logger *zap.Logger, ruleTable int, ip string) error
 	rule.Family = family
 	rule.Dst = dst
 	rule.Table = ruleTable
-	if err = netlink.RuleDel(rule); err != nil {
+	if err = netlink.RuleDel(rule); err != nil && err.Error() != ErrFileNotFound {
 		logger.Error("failed to del rule table", zap.Error(err))
 		return fmt.Errorf("failed to del rule table %d: %v ", ruleTable, err)
 	}

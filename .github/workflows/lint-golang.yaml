@@ -27,6 +27,8 @@ jobs:
     outputs:
       check: ${{ steps.result.outputs.check }}
       ref: ${{ steps.result.outputs.ref }}
+      chart: ${{ steps.result.outputs.chart }}
+      dockerfile: ${{ steps.result.outputs.dockerfile }}
     steps:
       - name: Check Go Code Changes
         uses: dorny/paths-filter@v2.10.2
@@ -41,6 +43,10 @@ jobs:
               - '**/*.go'
               - 'go.mod'
               - 'go.sum'
+            dockerfile:
+              - 'images/**'
+            chart:
+              - 'charts/**'
 
       - name: Result
         id: result
@@ -48,20 +54,28 @@ jobs:
           if ${{ github.event_name == 'push' }} ; then
               echo "trigger by push"
               echo "::set-output name=check::true"
+              echo "::set-output name=dockerfile::true"
+              echo "::set-output name=chart::true"
               echo "::set-output name=ref::${{ github.sha }}"
           elif ${{ github.event_name == 'pull_request' }} ; then
               echo "trigger by pull_request"
               flag=${{ steps.filter_pr.outputs.src }}
               echo "::set-output name=check::${flag}"
+              echo "::set-output name=dockerfile::${{ steps.filter_pr.outputs.dockerfile }}"
+              echo "::set-output name=chart::${{ steps.filter_pr.outputs.chart }}"
               ref=${{ github.event.pull_request.head.sha }}
               echo "::set-output name=ref::${ref}"
           elif ${{ inputs.ref != '' }} ; then
               echo "trigger by workflow_call"
               echo "::set-output name=check::true"
+              echo "::set-output name=dockerfile::true"
+              echo "::set-output name=chart::true"
               echo "::set-output name=ref::${{ inputs.ref }}"
           elif ${{ github.event_name == 'workflow_dispatch' }} ; then
               echo "trigger by workflow_dispatch"
               echo "::set-output name=check::true"
+              echo "::set-output name=dockerfile::true"
+              echo "::set-output name=chart::true"
               echo "::set-output name=ref::${{ github.event.inputs.ref }}"
           else
               echo "error, unexpected event "
@@ -70,7 +84,6 @@ jobs:
 
   lint-golang:
     needs: filter_changes
-    if: ${{ needs.filter_changes.outputs.check == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Install Go
@@ -84,7 +97,18 @@ jobs:
           persist-credentials: false
           ref: ${{ needs.filter_changes.outputs.ref }}
 
+      - name: scan chart
+        if: ${{ needs.filter_changes.outputs.chart == 'true' }}
+        run: |
+          make lint_chart_trivy
+
+      - name: scan dockerfile
+        if: ${{ needs.filter_changes.outputs.dockerfile == 'true' }}
+        run: |
+          make lint_dockerfile_trivy
+
       - name: Check module vendoring
+        if: ${{ needs.filter_changes.outputs.check == 'true' }}
         run: |
           go mod tidy
           go mod vendor
@@ -94,6 +118,7 @@ jobs:
           fi
 
       - name: Run golangci-lint
+        if: ${{ needs.filter_changes.outputs.check == 'true' }}
         id: golangci_lint
         continue-on-error: true
         uses: golangci/golangci-lint-action@v3
