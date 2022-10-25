@@ -42,18 +42,21 @@ install:
 	export E2E_KUBECONFIG=${E2E_KUBECONFIG}; \
 	export IP_FAMILY=${IP_FAMILY} ; \
 	export DEFAULT_CNI=${DEFAULT_CNI} ; \
+	export MACVLAN_VLANID=100 ; \
+	export INSTALL_TIME_OUT=${INSTALL_TIME_OUT} ; \
 	export VLAN_GATEWAY_CONTAINER=${VLAN_GATEWAY_CONTAINER} ; \
 	export CNI_PLUGINS_VERSION=${CNI_PLUGINS_VERSION} ; \
 	export RUN_ON_LOCAL=${RUN_ON_LOCAL} ; \
+	export META_PLUGINS_CI_REPO=${META_PLUGINS_CI_REPO} ; \
 	for script in `ls scripts/install/` ; do \
 	  echo "Running $${script}"  ; \
 	  chmod +x scripts/install/$${script} ; \
 	  bash scripts/install/$${script} || { echo "failed to run scripts/install/$${script} "; exit 1 ; } ; \
 	done
+	kubectl get po -n kube-system --kubeconfig ${E2E_KUBECONFIG}
 
-
-.PHONY: init
-kind-init:
+.PHONY: kind-init
+kind-init: vlan update-repo
 	export IP_FAMILY=${IP_FAMILY} ; \
 	export KIND_NODE_TAG=${K8S_VERSION} ; \
 	bash scripts/kind.sh
@@ -70,5 +73,6 @@ update-repo:
 
 .PHONY: clean
 clean:
-	kind delete cluster ${IP_FAMILY}
+	kind delete clusters ${IP_FAMILY}
+	docker rm -f ${VLAN_GATEWAY_CONTAINER}
 	rm -rf ../.tmp/

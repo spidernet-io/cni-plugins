@@ -1,8 +1,6 @@
 #!/bin/bash
 
-set -o errexit -o nounset
-
-exit 0
+set -o errexit -o nounset -o xtrace
 
 CURRENT_FILENAME=$( basename $0 )
 CURRENT_DIR_PATH=$(cd $(dirname $0); pwd)
@@ -36,3 +34,5 @@ for node in ${kind_nodes} ; do
   docker cp ${CNI_PACKAGE_PATH} $node:/root/
   docker exec $node tar xvfzp /root/${PACKAGE_NAME} -C /opt/cni/bin
 done
+
+echo -e "\033[35m Succeed to install cni-plugins to kind-node \033[0m"

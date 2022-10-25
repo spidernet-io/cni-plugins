@@ -7,11 +7,6 @@ env:
   ONLINE_REGISTER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
 on:
-  pull_request_target:
-    types:
-      - opened
-      - synchronize
-      - reopened
   push:
     branch:
       - main
@@ -23,6 +18,9 @@ on:
       tag:
         required: false
         type: string
+      push:
+        required: false
+        type: boolean
 
 permissions: write-all
 
@@ -44,7 +42,7 @@ jobs:
             echo "call by workflow_call"
             echo ::set-output name=tag::${{ inputs.ref }}
             echo ::set-output name=version::${{ inputs.ref }}
-            echo ::set-output name=push::true
+            echo ::set-output name=push::${{ inputs.push }}
           elif ${{ github.event_name == 'push' }} ; then
             echo "trigger by push"
             echo ::set-output name=tag::${{ github.sha }}
@@ -77,7 +75,7 @@ jobs:
           password: ${{ env.ONLINE_REGISTER_PASSWORD }}
           registry: ${{ env.ONLINE_REGISTER }}
 
-      - name: Build container image
+      - name: Build container image and push
         if: ${{ steps.tag.outputs.push == 'true' }}
         uses: docker/build-push-action@v2
         with:
@@ -92,12 +90,13 @@ jobs:
             GIT_COMMIT_TIME=${{ steps.arg.outputs.committime }}
             VERSION=${{ steps.tag.outputs.tag }}
 
-      - name: Build local container image
+      - name: Build ci container image for e2e-test
         if: ${{ steps.tag.outputs.push != 'true' }}
         uses: docker/build-push-action@v2
         with:
           context: ./
-          tags: ghcr.io/${{ github.repository }}/meta-plugins:${{ steps.tag.outputs.version }}
+          push: false
+          tags: ghcr.io/${{ github.repository }}/meta-plugins-ci:latest
           file: ./images/Dockerfile
           github-token: ${{ secrets.WELAN_PAT }}
           platforms: linux/amd64
@@ -111,4 +110,14 @@ jobs:
         if: ${{ steps.tag.outputs.push != 'true' }}
         run: |
           docker images
-          make lint_image_trivy -e IMAGE_NAME=ghcr.io/${{ github.repository }}/meta-plugins:${{ steps.tag.outputs.version }}
+          docker save -o /tmp/ci-images.tar ghcr.io/${{ github.repository }}/meta-plugins-ci:latest
+          make lint_image_trivy -e IMAGE_NAME=ghcr.io/${{ github.repository }}/meta-plugins-ci:latest
+
+      - name: Upload artifact e2e image tar
+        if: ${{ steps.tag.outputs.push != 'true' }}
+        uses: actions/upload-artifact@v3.1.0
+        with:
+          name: image-e2e-tar
+          path: /tmp/ci-images.tar
+          retention-days: 1
+

@@ -1,0 +1,99 @@
+name: Run E2E Kind Test
+
+env:
+  CI_IMAGE_REPO: ghcr.io/spidernet-io/cni-plugins/meta-plugins
+
+on:
+  schedule:
+    # each day
+    - cron: "0 20 * * *"
+  push:
+    branches:
+      - main
+      - v*
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+jobs:
+  get_ref:
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.result.outputs.ref }}
+      run_e2e: ${{ steps.get_ref.outputs.run_e2e }}
+    steps:
+      - name: Check Code Changes
+        uses: dorny/paths-filter@v2.11.1
+        if: ${{ github.event_name == 'pull_request_target' }}
+        id: filter_pr
+        with:
+          base: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          filters: |
+            run_e2e:
+              - '**/*.sh'
+              - '**/*.go'
+              - 'go.mod'
+              - 'test/*'
+              - 'go.sum'
+              - 'Makefile*'
+              - '**/Makefile*'
+
+      - name: Get Ref
+        id: get_ref
+        run: |
+          if ${{ github.event_name == 'push' }} ; then
+            echo "trigger by push"
+            echo ::set-output name=tag::${{ github.sha }}
+            echo ::set-output name=push::false
+            echo ::set-output name=run_e2e::true
+          elif ${{ github.event_name == 'pull_request_target' }} ; then
+            echo "trigger by pull_request_target"
+            echo ::set-output name=tag::${{ github.event.pull_request.head.sha }}
+            echo ::set-output name=push::false
+            if ${{ steps.filter_pr.outputs.run_e2e == 'true' }} ; then
+                # run all e2e
+                echo ::set-output name=run_e2e::true
+            fi
+          else
+            # schedule event
+            # use main sha for e2e image tag
+            echo "trigger by schedule"
+            echo ::set-output name=tag::main
+            echo ::set-output name=push::false
+            # nightly ci, run all e2e
+            echo ::set-output name=run_e2e::true
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+          ref: ${{ steps.get_ref.outputs.tag }}
+
+      - name: Result Ref
+        id: result
+        run: |
+          git_ref=$( git show -s --format='format:%H')
+          echo "ref=${git_ref}" >> $GITHUB_OUTPUT
+
+  call_build_e2e_image:
+    needs: [get_ref]
+    if: ${{ needs.get_ref.outputs.run_e2e == 'true' }}
+    uses: ./.github/workflows/image-build.yaml
+    with:
+      ref: ${{ needs.get_ref.outputs.ref }}
+      push: false
+    secrets: inherit
+
+  call_e2e_dual:
+    needs: [get_ref,call_build_e2e_image]
+    if: ${{ needs.get_ref.outputs.run_e2e == 'true' }}
+    uses: ./.github/workflows/e2e-init.yaml
+    with:
+      ip_family: dual
+      push: false
+      ref: ${{ needs.get_ref.outputs.ref }}
+    secrets: inherit
