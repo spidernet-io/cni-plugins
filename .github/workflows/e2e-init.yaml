@@ -51,7 +51,8 @@ jobs:
 
       - name: Load Image to docker
         run: |
-          kind load docker-image ghcr.io/${{ github.repository }}/meta-plugins-ci:latest --name ${{ inputs.ip_family }}
+          docker load -i .tmp/ci-images.tar
+          docker images
 
       - name: Setup Kind Cluster
         run: |
