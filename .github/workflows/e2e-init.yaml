@@ -1,0 +1,104 @@
+name: call e2e
+
+env:
+  CI_IMAGE_REPO: ghcr.io/spidernet-io/cni-plugins/meta-plugins
+  PERFORMANCESCRIPT: "./tools/scripts/e2eperformance.sh"
+
+on:
+  workflow_call:
+    inputs:
+      ip_family:
+        required: true
+        type: string
+      ref:
+        required: false
+        type: string
+      push:
+        required: false
+        type: boolean
+
+jobs:
+  call_e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Golang
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.19.0
+          id: go
+
+      - name: Install Ginkgo
+        run:
+          go install github.com/onsi/ginkgo/v2/ginkgo@v2.3.0
+
+      # https://github.com/helm/kind-action
+      - name: Install Kind Bin
+        uses: helm/kind-action@v1.4.0
+        with:
+          install_only: true
+
+      - name: Download ci image
+        uses: actions/download-artifact@v3
+        with:
+          name: image-e2e-tar
+          path: .tmp
+
+      - name: Load Image to docker
+        run: |
+          kind load docker-image ghcr.io/${{ github.repository }}/meta-plugins-ci:latest --name ${{ inputs.ip_family }}
+
+      - name: Setup Kind Cluster
+        run: |
+            make -C test kind-init IP_FAMILY=${{ inputs.ip_family }}
+
+      - name: Load ci image to kind
+        uses: nick-invision/retry@v2
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          shell: bash
+          command: |
+            kind load docker-image ghcr.io/${{ github.repository }}/meta-plugins-ci:latest --name ${{ inputs.ip_family }}
+
+      - name: Install
+        id: install
+        run: |
+          make -C test install IP_FAMILY=${{ inputs.ip_family }}  \
+             META_PLUGINS_CI_REPO=ghcr.io/${{ github.repository }}/meta-plugins-ci \
+             DEFAULT_CNI=k8s-pod-network
+
+      - name: Setting vlan interface and create remote's client container
+        id: vlan
+        run:
+          make -C test vlan IP_FAMILY=${{ inputs.ip_family }}
+
+      - name: update apt-get sources_repo
+        id: sources_repo
+        run:
+          make -C test update-repo
+
+      - name: Run E2E
+        id: e2e
+        continue-on-error: true
+        run: |
+            RESULT=0
+            make -C test e2e IP_FAMILY=${{ inputs.ip_family }} || RESULT=$?
+            if ((RESULT==0)) ; then
+                echo "pass=true" >> $GITHUB_OUTPUT
+            else
+                echo "pass=false" >> $GITHUB_OUTPUT
+            fi
+
+      - name: Show e2e Result For Dual-stack
+        run: |
+          if ${{ steps.e2e.outputs.pass == 'true' }} ;then
+              exit 0
+          else
+              exit 1
+          fi

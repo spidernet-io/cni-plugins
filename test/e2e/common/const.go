@@ -11,10 +11,10 @@ const (
 
 // multus crd name
 var (
-	MacvlanStandaloneVlan100Name = "macvlan-standalone-vlan100"
-	MacvlanStandaloneVlan200Name = "macvlan-standalone-vlan200"
-	MacvlanOverlayVlan100Name    = "macvlan-overlay-vlan100"
-	MacvlanOverlayVlan200Name    = "macvlan-overlay-vlan200"
+	MacvlanStandaloneVlan100Name = "macvlan-standalone-vlan0"
+	MacvlanStandaloneVlan200Name = "macvlan-standalone-vlan100"
+	MacvlanOverlayVlan100Name    = "macvlan-overlay-vlan0"
+	MacvlanOverlayVlan200Name    = "macvlan-overlay-vlan100"
 )
 
 // annotations

@@ -19,7 +19,7 @@ https://get.helm.sh/helm-${HELM_VERSION}-${OS}-amd64.tar.gz
 - Docker()
 - Ginkgo(2.1.3)
 ```shell
-go install github.com/onsi/ginkgo/v2/ginkgo@v2.1.3 
+go install github.com/onsi/ginkgo/v2/ginkgo@v2.3.0 
 ```
 - Kubectl()
 

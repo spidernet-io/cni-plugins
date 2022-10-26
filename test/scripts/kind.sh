@@ -38,6 +38,7 @@ EOF
   echo "========================================================"
   echo "  kubectl get nodes -o wide  --kubeconfig ${KUBECONFIG}  "
   echo "========================================================"
+  kubectl get nodes -o wide  --kubeconfig ${KUBECONFIG}
 }
 
 main() {

@@ -5,6 +5,9 @@ env:
   BUILD_PLATFORM: linux/amd64,linux/arm64
   ONLINE_REGISTER_USER: ${{ github.actor }}
   ONLINE_REGISTER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+  MERGE_BRANCH: gh-pages
+  PR_REVIWER: cyclinder
+
 
 on:
   push:
@@ -32,6 +35,7 @@ jobs:
     with:
       ref: ${{ github.event.inputs.ref }}
       tag: ${{ github.ref_name }}
+      push: true
     secrets: inherit
 
   create-binary-release:

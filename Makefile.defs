@@ -1,26 +1,26 @@
-ROOT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
-QUIET := true
-GIT_COMMIT_VERSION = $(shell git show -s --format='format:%H')
-GIT_COMMIT_TIME = $(shell git show -s --format='format:%aI')
+ROOT_DIR = $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+CALICO_VERSION ?= v3.24.0
+CLUSTER_POD_SUBNET_V4 := 10.244.0.0/16
+CLUSTER_POD_SUBNET_V6 := fd00:10:244::/56
+CLUSTER_SERVICE_SUBNET_V4 := 10.96.0.0/16
+CLUSTER_SERVICE_SUBNET_V6 := fd00:10:96::/112
+E2E_KUBECONFIG := ${ROOT_DIR}/../.tmp/config/.kube/config
+IP_FAMILY ?= dual
+DEFAULT_CNI ?= k8s-pod-network
+K8S_VERSION ?= v1.25.0
 
-GO ?= go
-GO_BUILD = CGO_ENABLED=0 $(GO) build
-GO_BUILD_WITH_CGO = CGO_ENABLED=1 $(CGO_CC) $(GO) build
-GO_BUILD_FLAGS = GOOS=$(GOOS) GOARCH=$(ARCH)
+# Multus
+MULTUS_FIRST_VLAN=0
+MULTUS_SECOND_VLAN=100
 
-ARCH ?= $(shell uname -m)
-ifeq ($(ARCH),x86_64)
-    ARCH=amd64
-endif
+VLAN_GATEWAY_CONTAINER="vlan-gateway"
 
-GOOS ?= $(shell uname | tr A-Z a-z)
-ifeq ($(GOOS),darwin)
-    GOOS=linux
-endif
+E2E_TIMEOUT ?= 60m
+INSTALL_TIME_OUT ?= 300s
 
-QUIET_FLAG :=
-ifeq ($(QUIET),true)
-    QUIET_FLAG=@
-endif
+CNI_PLUGINS_VERSION=v1.1.1
 
-LINT_TRIVY_SEVERITY_LEVEL ?= CRITICAL
+# proxy
+RUN_ON_LOCAL=false
+META_PLUGINS_CI_REPO=ghcr.io/spidernet-io/cni-plugins/meta-plugins
+

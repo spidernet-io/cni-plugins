@@ -16,9 +16,11 @@ MULTUS_SECOND_VLAN=100
 VLAN_GATEWAY_CONTAINER="vlan-gateway"
 
 E2E_TIMEOUT ?= 60m
+INSTALL_TIME_OUT ?= 300s
 
 CNI_PLUGINS_VERSION=v1.1.1
 
 # proxy
 RUN_ON_LOCAL=false
+META_PLUGINS_CI_REPO=ghcr.m.daocloud.io/spidernet-io/cni-plugins/meta-plugins
 
