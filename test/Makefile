@@ -1,7 +1,7 @@
 include Makefile.defs
 
 .PHONY: test
-test: kind-init vlan install e2e
+test: kind-init install e2e
 
 .PHONY: vlan
 vlan:

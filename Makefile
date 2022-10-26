@@ -1,78 +1,52 @@
 include Makefile.defs
 
-.PHONY: test
-test: kind-init vlan install e2e
+all: usage
 
-.PHONY: vlan
-vlan:
-	export VLAN_GATEWAY_CONTAINER=${VLAN_GATEWAY_CONTAINER} ; \
-	export IP_FAMILY=${IP_FAMILY} ; \
-	bash scripts/network-config.sh
+usage:
+	@echo "usage:"
+	@echo  "  \033[35m make build \033[0m:       --- build all plugins"
+	@echo  "  \033[35m make image \033[0m:       --- build docker image"
+	@echo  "  \033[35m make test \033[0m:        --- run e2e test on your local environment"
 
-.PHONY: e2e
-e2e:
-	export E2E_KUBECONFIG_PATH=${E2E_KUBECONFIG}; [ -f "$${E2E_KUBECONFIG_PATH}" ] || { echo "error, does not exist KUBECONFIG: ${E2E_KUBECONFIG_PATH}" ; exit 1 ; } ; \
-	export E2E_CLUSTER_NAME=${IP_FAMILY} ; \
-	export VLAN_GATEWAY_CONTAINER=${VLAN_GATEWAY_CONTAINER} ; \
-	NODE_LIST="` docker ps | egrep " kindest/node.* $(IP_FAMILY)-(control|worker)" | awk '{print $$1 }' ` "; \
-	[ -n "$$NODE_LIST" ] || { echo "error, failed to find any kind nodes, please setup kind cluster $(E2E_CLUSTER_NAME) first" ; exit 1 ; } ; \
-	NODE_LIST=` echo "$${NODE_LIST}" | tr -d ' ' | tr '\n' ',' ` ; \
-	NODE_LIST=$${NODE_LIST%%,} ; \
-	echo "find cluster node: $${NODE_LIST}" ; \
-	export E2E_KIND_CLUSTER_NODE_LIST="$${NODE_LIST}" ; \
-	if [ "$(IP_FAMILY)" == "ipv4" ] ; then \
-		export E2E_IPV4_ENABLED=true ; export E2E_IPV6_ENABLED=false ; \
-	elif [ "$(IP_FAMILY)" == "ipv6" ] ; then \
-		export E2E_IPV4_ENABLED=false ; export E2E_IPV6_ENABLED=true ; \
-	else \
-		export E2E_IPV4_ENABLED=true ; export E2E_IPV6_ENABLED=true ; \
-	fi ; \
-	ginkgo --race --timeout=${E2E_TIMEOUT} --output-interceptor-mode=none --json-report e2ereport.json --output-dir ${ROOT_DIR}/../.tmp \
-	 --label-filter="${E2E_GINKGO_LABELS}"  -randomize-suites -randomize-all  -vv --fail-fast ${E2E_GINKGO_OPTIONS} -r e2e/*
-
-.PHONY: install
-install:
-	echo -e "  \033[35m Start install network-component: \033[0m" ; \
-	if [ ! -f ${E2E_KUBECONFIG} ]; then echo "can't found ${E2E_KUBECONFIG}, please provide the right kubeconfig path using env E2E_KUBECONFIG" && exit 1; fi ; \
-	export CLUSTER_POD_SUBNET_V4=${CLUSTER_POD_SUBNET_V4}; \
-    export CLUSTER_POD_SUBNET_V6=${CLUSTER_POD_SUBNET_V6}; \
-    export CLUSTER_SERVICE_SUBNET_V4=${CLUSTER_SERVICE_SUBNET_V4}; \
-    export CLUSTER_SERVICE_SUBNET_V6=${CLUSTER_SERVICE_SUBNET_V6}; \
-	export CALICO_VERSION=${CALICO_VERSION}; \
-	export E2E_KUBECONFIG=${E2E_KUBECONFIG}; \
-	export IP_FAMILY=${IP_FAMILY} ; \
-	export DEFAULT_CNI=${DEFAULT_CNI} ; \
-	export MACVLAN_VLANID=100 ; \
-	export INSTALL_TIME_OUT=${INSTALL_TIME_OUT} ; \
-	export VLAN_GATEWAY_CONTAINER=${VLAN_GATEWAY_CONTAINER} ; \
-	export CNI_PLUGINS_VERSION=${CNI_PLUGINS_VERSION} ; \
-	export RUN_ON_LOCAL=${RUN_ON_LOCAL} ; \
-	export META_PLUGINS_CI_REPO=${META_PLUGINS_CI_REPO} ; \
-	for script in `ls scripts/install/` ; do \
-	  echo "Running $${script}"  ; \
-	  chmod +x scripts/install/$${script} ; \
-	  bash scripts/install/$${script} || { echo "failed to run scripts/install/$${script} "; exit 1 ; } ; \
-	done
-	kubectl get po -n kube-system --kubeconfig ${E2E_KUBECONFIG}
-
-.PHONY: kind-init
-kind-init:
-	export IP_FAMILY=${IP_FAMILY} ; \
-	export KIND_NODE_TAG=${K8S_VERSION} ; \
-	bash scripts/kind.sh
-
-.PHONY: update-repo
-update-repo:
-	@NODE_LIST=` docker ps | egrep " kindest/node.* $(IP_FAMILY)-(control|worker)" | awk '{print $$1 }' ` ; \
-	[ -n "$$NODE_LIST" ] || { echo "error, failed to find any kind nodes, please setup kind cluster $(IP_FAMILY) first" ; exit 1 ; } ; \
-	for NODE in $${NODE_LIST} ; do \
-	  docker cp scripts/update_repo.sh $${NODE}:/home/ ; \
-	  docker exec $${NODE} chmod +x /home/update_repo.sh ; \
-	  docker exec $${NODE} ./home/update_repo.sh ; \
+.PHONY: build
+build:
+	@mkdir -p ./.tmp/bin ; \
+	for plugin in `ls ./plugins/` ; do   \
+		echo "build $${plugin} to $(ROOT_DIR)/.tmp/bin/${plugin}" ; \
+		$(GO_BUILD_FLAGS) $(GO_BUILD) -o ./.tmp/bin/$${plugin} ./plugins/$${plugin} ;  \
 	done
 
-.PHONY: clean
-clean:
-	kind delete cluster ${IP_FAMILY}
-	docker rm -f {VLAN_GATEWAY_CONTAINER}
-	rm -rf ../.tmp/
+.PHONY: lint-golang
+lint-golang:
+	GOOS=linux golangci-lint run ./...
+
+.PHONY: lint_image_trivy
+lint_image_trivy: IMAGE_NAME ?=
+lint_image_trivy:
+	[ -n "$(IMAGE_NAME)" ] || { echo "error, please input IMAGE_NAME" && exit 1 ; }  ; \
+ 	IS_TAR_FILE=` echo $(IMAGE_NAME) | egrep \.tar$ ` ; \
+ 	if [ -z "${IS_TAR_FILE}" ]; then  \
+		docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+			  -v /tmp/trivy:/root/trivy.cache/  \
+			  aquasec/trivy:latest image --exit-code 1  --severity $(LINT_TRIVY_SEVERITY_LEVEL)  ${IMAGE_NAME}  ;\
+ 	else  \
+		docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+			  -v /tmp/trivy:/root/trivy.cache/ \
+			  -v $(IMAGE_NAME):$(IMAGE_NAME)  \
+			  aquasec/trivy:latest image --exit-code 1  --severity $(LINT_TRIVY_SEVERITY_LEVEL)  --input ${IMAGE_NAME}  ;\
+ 	fi
+
+.PHONY: lint_chart_trivy
+lint_chart_trivy:
+	@ docker run --rm \
+ 		  -v /tmp/trivy:/root/trivy.cache/  \
+          -v $(ROOT_DIR):/tmp/src  \
+          aquasec/trivy:latest config --exit-code 1  --severity $(LINT_TRIVY_SEVERITY_LEVEL) /tmp/src/charts
+
+
+.PHONY: lint_dockerfile_trivy
+lint_dockerfile_trivy:
+	@ docker run --rm \
+ 		  -v /tmp/trivy:/root/trivy.cache/  \
+          -v $(ROOT_DIR):/tmp/src  \
+          aquasec/trivy:latest config --exit-code 1  --severity $(LINT_TRIVY_SEVERITY_LEVEL) /tmp/src/images
