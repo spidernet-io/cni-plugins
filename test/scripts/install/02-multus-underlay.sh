@@ -11,11 +11,11 @@ PROJECT_ROOT_PATH=$( cd ${CURRENT_DIR_PATH}/../.. && pwd )
 [ -z "${INSTALL_TIME_OUT}" ] && INSTALL_TIME_OUT=600s
 
 
-INSTALLED=` helm list -n kube-system --kubeconfig ${E2E_KUBECONFIG} | awk '{print $1}'| grep multus-underlay `
-[ -n ${INSTALLED} ] && echo "Warning!! multus-underlay has been deployed, skip install multus-underlay" && exit 0
+#INSTALLED=` kubectl get po -n kube-system -l app.kubernetes.io/instance=multus-underlay --kubeconfig ${E2E_KUBECONFIG}`
+#[ -n ${INSTALLED} ] && echo "Warning!! multus-underlay has been deployed, skip install multus-underlay" && exit 0
 
 # Multus config
-MULTUS_UNDERLAY_VERSION=${MULTUS_UNDERLAY_VERSION:-v0.1.3}
+MULTUS_UNDERLAY_VERSION=${MULTUS_UNDERLAY_VERSION:-0.1.3}
 MACVLAN_MASTER=${MACVLAN_MASTER:-eth0}
 MACVLAN_TYPE=${MACVLAN_TYPE:-macvlan-overlay}
 

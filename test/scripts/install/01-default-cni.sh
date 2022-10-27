@@ -9,8 +9,8 @@ CURRENT_FILENAME=$( basename $0 )
 CURRENT_DIR_PATH=$(cd $(dirname $0); pwd)
 PROJECT_ROOT_PATH=$( cd ${CURRENT_DIR_PATH}/../../.. && pwd )
 
-CALICO_POD_NUM=` kubectl get po -n kube-system --kubeconfig ${E2E_KUBECONFIG} | awk '{print $1}' | grep calico | wc -l | tr -d ' ' `
-if [ "${CALICO_POD_NUM}" == 3 ] ; then echo "Warning!! calico has been deployed, skip install calico" && exit 0 ; fi
+#CALICO_POD_NUM=` kubectl get po -n kube-system -l k8s-app=calico-node --kubeconfig ${E2E_KUBECONFIG} `
+#[ -n "${CALICO_POD_NUM}" ] && echo "Warning!! calico has been deployed, skip install calico" && exit 0
 
 # Multus config
 DEFAULT_CNI=${DEFAULT_CNI:-calico}
