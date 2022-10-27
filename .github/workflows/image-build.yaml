@@ -120,4 +120,3 @@ jobs:
           name: image-e2e-tar
           path: /tmp/ci-images.tar
           retention-days: 1
-

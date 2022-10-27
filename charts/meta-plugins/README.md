@@ -21,7 +21,7 @@ Plugins works with macvlan cni to solve some communication problems when macvlan
 | affinity | object | `{}` |  |
 | fullnameOverride | string | `""` |  |
 | image.pullPolicy | string | `"IfNotPresent"` |  |
-| image.repository | string | `"ghcr.io/spidernet-io/cni-plugins/veth"` |  |
+| image.repository | string | `"ghcr.io/spidernet-io/cni-plugins/meta-plugins"` |  |
 | image.tag | string | `""` |  |
 | imagePullSecrets | list | `[]` |  |
 | nameOverride | string | `""` |  |
@@ -41,7 +41,7 @@ By default, the image's tag is consistent with the Chart version, if you want to
 
 ```shell
 helm install cni-meta-plugins/veth -n kube-system . \
---set image.tag=v0.1.6
+--set image.tag=v0.1.8
 ```
 
 -----------------------------
