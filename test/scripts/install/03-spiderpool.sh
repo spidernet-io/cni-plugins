@@ -2,8 +2,8 @@
 
 set -o errexit -o nounset -o pipefail
 
-INSTALLED=` helm list -n kube-system --kubeconfig ${E2E_KUBECONFIG} | awk '{print $1}'| grep spiderpool `
-[ -n ${INSTALLED} ] && echo "Warning!! spiderpool has been deployed, skip install spiderpool" && exit 0
+#INSTALLED=` helm list -n kube-system --kubeconfig ${E2E_KUBECONFIG} | awk '{print $1}'| grep spiderpool `
+#[ -n ${INSTALLED} ] && echo "Warning!! spiderpool has been deployed, skip install spiderpool" && exit 0
 
 SPIDERPOOL_VERSION=${SPIDERPOOL_VERSION:-0.2.0}
 SPIDERPOOL_DEFAULT_POOL_V4=172.18.0.0/16
