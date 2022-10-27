@@ -56,7 +56,7 @@ install:
 	kubectl get po -n kube-system --kubeconfig ${E2E_KUBECONFIG}
 
 .PHONY: kind-init
-kind-init: vlan update-repo
+kind-init:
 	export IP_FAMILY=${IP_FAMILY} ; \
 	export KIND_NODE_TAG=${K8S_VERSION} ; \
 	bash scripts/kind.sh
