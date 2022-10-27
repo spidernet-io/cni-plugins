@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"testing"
+	"time"
 )
 
 func TestMacvlanStandaloneOne(t *testing.T) {
@@ -95,7 +96,7 @@ var _ = BeforeSuite(func() {
 	Expect(podIPs).NotTo(BeNil())
 	GinkgoWriter.Printf("Get All PodIPs: %v\n", podIPs)
 
-	// time.Sleep( 500* time.Second)
+	time.Sleep(5 * time.Second)
 })
 
 var _ = AfterSuite(func() {
