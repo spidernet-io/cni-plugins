@@ -6,12 +6,6 @@ on:
     branches:
       - main
       - release-*
-  workflow_dispatch:
-    inputs:
-      ref:
-        description: 'branch, sha, tag'
-        required: true
-        default: main
   workflow_call:
     inputs:
       ref:
@@ -124,3 +118,59 @@ jobs:
         uses: golangci/golangci-lint-action@v3
         with:
           version: latest
+
+  unitest:
+    needs: filter_changes
+    if: ${{ needs.filter_changes.outputs.check == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Golang
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.19.0
+          id: go
+
+      - name: Install Ginkgo
+        run:
+          go install github.com/onsi/ginkgo/v2/ginkgo@v2.3.0
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+          ref: ${{ needs.filter_changes.outputs.ref }}
+
+      # ================= unitest
+      - name: Run unitest
+        id: unitest
+        run: |
+          make unit-test
+
+      - name: Upload Coverage Artifact
+        if: ${{ steps.unitest.outcome == 'failure' }}
+        uses: actions/upload-artifact@v3.1.0
+        with:
+          name: coverage.out
+          path: coverage.out
+          retention-days: 1
+
+      - name: Upload Report Artifact
+        if: ${{ steps.unitest.outcome == 'failure' }}
+        uses: actions/upload-artifact@v3.1.0
+        with:
+          name: unitestreport.json
+          path: unitestreport.json
+          retention-days: 1
+
+      # ============= upload coverage report
+      - name: Upload to Codecov
+        if: ${{ steps.unitest.outcome != 'failure' }}
+        uses: codecov/codecov-action@v3.1.1
+        with:
+          directory: './'
+          files: 'coverage.out'
+          flags: unittests
+          name: my-codecov-umbrella
+          fail_ci_if_error: true
+          verbose: true
+          # token: ${{ secrets.CODECOV_TOKEN }}

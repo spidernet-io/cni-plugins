@@ -50,3 +50,10 @@ lint_dockerfile_trivy:
  		  -v /tmp/trivy:/root/trivy.cache/  \
           -v $(ROOT_DIR):/tmp/src  \
           aquasec/trivy:latest config --exit-code 1  --severity $(LINT_TRIVY_SEVERITY_LEVEL) /tmp/src/images
+
+.PHONY: unit-test
+unit-test:
+	 ginkgo --cover --coverprofile=coverage.out --covermode set \
+	 	--json-report unitestreport.json -randomize-suites -randomize-all --keep-going \
+  	 	--timeout=1h  -p   --slow-spec-threshold=120s -vv  -r pkg plugins/* ; \
+  	 go tool cover -html=./coverage.out -o coverage-all.html

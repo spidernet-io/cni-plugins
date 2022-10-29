@@ -1,0 +1,16 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 1%
+        threshold: 1%
+        if_ci_failed: error
+    patch:
+      default:
+        target: 1%
+        threshold: 11%
+        if_ci_failed: ignore
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default

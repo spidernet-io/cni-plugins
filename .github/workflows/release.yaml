@@ -91,6 +91,7 @@ jobs:
           allowUpdates: true
           removeArtifacts: true
           replacesArtifacts: true
+          generateReleaseNotes: true
           artifactErrorsFailBuild: true
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ needs.get_ref.outputs.tag }}
