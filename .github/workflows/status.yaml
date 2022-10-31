@@ -1,9 +1,9 @@
 name: Update Badge
 
 env:
-  CODESTATUSSCRIPT: "./hack/scripts/codeCoverage.sh"
-  E2ESTATUSSCRIPT: "./hack/scripts/e2ecover.sh"
-  TODOSCRIPT: "./hack/scripts/todocover.sh"
+  CODESTATUSSCRIPT: "./hack/codeCoverage.sh"
+  E2ESTATUSSCRIPT: "./hack/e2ecover.sh"
+  TODOSCRIPT: "./hack/todocover.sh"
 
 on:
   push:
