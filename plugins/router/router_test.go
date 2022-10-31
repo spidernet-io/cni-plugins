@@ -10,13 +10,16 @@ func Test_parseConfig(t *testing.T) {
 		"cniVersion": "0.3.1",
 		"name": "router",
 		"type": "router",
-		"routes": [
-			{"gw": 172.17.8.1"},
-	   		{"dst": "172.16.0.0/24"}
-		],
+		"service_hijack_subnet": ["10.244.64.0/18"],
+		"overlay_hijack_subnet": ["10.244.0.0/18"],
 		"rp_filter": {
 			"enable": true,
 			"value": 0
+		},
+		"overlay_interface": "eth0",
+		"migrate_route": -1,
+		"log_options": {
+			"log_level": "debug"
 		},
 		"prevResult": {
 			"interfaces": [
@@ -43,7 +46,4 @@ func Test_parseConfig(t *testing.T) {
 	if err := json.Unmarshal([]byte(conf), pluginConf); err != nil {
 		t.Fatal(err)
 	}
-
-	t.Log(pluginConf.RPFilter)
-
 }

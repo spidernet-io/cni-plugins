@@ -98,7 +98,7 @@ jobs:
           push: false
           tags: ghcr.io/${{ github.repository }}/meta-plugins-ci:latest
           file: ./images/Dockerfile
-          github-token: ${{ secrets.WELAN_PAT }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           platforms: linux/amd64
           outputs: type=docker
           build-args: |
