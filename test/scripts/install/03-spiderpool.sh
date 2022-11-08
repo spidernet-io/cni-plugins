@@ -88,6 +88,41 @@ helm install spiderpool daocloud/spiderpool --wait -n kube-system --kubeconfig $
 kubectl wait --for=condition=ready -l app.kubernetes.io/name=spiderpool --timeout=${INSTALL_TIME_OUT} pod -n kube-system \
 --kubeconfig ${E2E_KUBECONFIG}
 
+
+
+case ${IP_FAMILY} in
+  ipv4)
+cat <<EOF | kubectl --kubeconfig ${E2E_KUBECONFIG} apply -f -
+apiVersion: spiderpool.spidernet.io/v1
+kind: SpiderIPPool
+metadata:
+  name: vlan${MACVLAN_VLANID}-v4
+spec:
+  disable: false
+  gateway: ${SPIDERPOOL_VLAN100_GATEWAY_V4}
+  ipVersion: 4
+  ips:
+  - ${SPIDERPOOL_VLAN100_RANGES_V4}
+  subnet: ${SPIDERPOOL_VLAN100_POOL_V4}
+EOF
+    ;;
+  ipv6)
+cat <<EOF | kubectl --kubeconfig ${E2E_KUBECONFIG} apply -f -
+apiVersion: spiderpool.spidernet.io/v1
+kind: SpiderIPPool
+metadata:
+  name: vlan100-v6
+spec:
+  disable: false
+  gateway: ${SPIDERPOOL_VLAN100_GATEWAY_V6}
+  ipVersion: 6
+  ips:
+  - ${SPIDERPOOL_VLAN100_RANGES_V6}
+  subnet: ${SPIDERPOOL_VLAN100_POOL_V6}
+  vlan: ${MACVLAN_VLANID}
+EOF
+    ;;
+  dual)
 cat <<EOF | kubectl --kubeconfig ${E2E_KUBECONFIG} apply -f -
 apiVersion: spiderpool.spidernet.io/v1
 kind: SpiderIPPool
@@ -115,5 +150,10 @@ spec:
   subnet: ${SPIDERPOOL_VLAN100_POOL_V6}
   vlan: ${MACVLAN_VLANID}
 EOF
+    ;;
+  *)
+    echo "the value of IP_FAMILY: ipv4 or ipv6 or dual"
+    exit 1
+esac
 
 echo -e "\033[35m Succeed to install spiderpool \033[0m"

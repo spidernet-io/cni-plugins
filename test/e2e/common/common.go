@@ -1,6 +1,7 @@
 package common
 
 import (
+	"encoding/json"
 	"fmt"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -8,7 +9,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 	"net"
+	"strings"
 )
+
+type spiderpoolAnnotation struct {
+	IPV4 string `json:"ipv4"`
+	IPV6 string `json:"ipv6"`
+}
 
 func GenerateDeploymentYaml(dpmName, namespace string, labels, annotations map[string]string) *appsv1.Deployment {
 	return &appsv1.Deployment{
@@ -139,10 +146,47 @@ func GetIPsFromPods(pods *corev1.PodList) []string {
 	return ips
 }
 
+func GetAllIPsFromPods(pods *corev1.PodList) ([]string, error) {
+	var ips []string
+	var err error
+	for _, pod := range pods.Items {
+		calicoIPs := pod.Annotations["cni.projectcalico.org/podIPs"]
+		for _, v := range strings.Split(calicoIPs, ",") {
+			//if net.ParseIP(v).To4() == nil && !IPV6 {
+			if net.ParseIP(v).To4() == nil {
+				continue
+			} else if net.ParseIP(v).To4() != nil && !IPV4 {
+				continue
+			}
+			ip, _, _ := net.ParseCIDR(v)
+			ips = append(ips, ip.String())
+		}
+		for _, v := range SpiderPoolIPAnnotationsKey {
+			spiderpoolIPs, ok := pod.Annotations[v]
+			if ok {
+				spiderpool := &spiderpoolAnnotation{}
+				err = json.Unmarshal([]byte(spiderpoolIPs), spiderpool)
+				if err != nil {
+					return ips, fmt.Errorf("unmarshal spiderpool annations err: %s", err)
+				}
+				if spiderpool.IPV4 != "" && IPV4 {
+					ip, _, _ := net.ParseCIDR(spiderpool.IPV4)
+					ips = append(ips, ip.String())
+				}
+				if spiderpool.IPV6 != "" && IPV6 {
+					ip, _, _ := net.ParseCIDR(spiderpool.IPV6)
+					ips = append(ips, ip.String())
+				}
+			}
+		}
+	}
+	return ips, nil
+}
+
 func GetCurlCommandByIPFamily(netIp string, port int32) string {
 	args := fmt.Sprintf("%s:%d ", netIp, port)
 	if net.ParseIP(netIp).To4() == nil {
-		args = fmt.Sprintf("-g [%s]:%d", netIp, port)
+		args = fmt.Sprintf("-g [%s]:%d ", netIp, port)
 	}
 	return "curl " + args
 }

@@ -15,7 +15,7 @@ PROJECT_ROOT_PATH=$( cd ${CURRENT_DIR_PATH}/../.. && pwd )
 #[ -n ${INSTALLED} ] && echo "Warning!! multus-underlay has been deployed, skip install multus-underlay" && exit 0
 
 # Multus config
-MULTUS_UNDERLAY_VERSION=${MULTUS_UNDERLAY_VERSION:-0.1.3}
+MULTUS_UNDERLAY_VERSION=${MULTUS_UNDERLAY_VERSION:-0.1.4}
 MACVLAN_MASTER=${MACVLAN_MASTER:-eth0}
 MACVLAN_TYPE=${MACVLAN_TYPE:-macvlan-overlay}
 

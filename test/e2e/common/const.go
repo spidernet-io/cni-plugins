@@ -1,6 +1,9 @@
 package common
 
-import "time"
+import (
+	"os"
+	"time"
+)
 
 // multus crd type
 const (
@@ -11,10 +14,10 @@ const (
 
 // multus crd name
 var (
-	MacvlanStandaloneVlan100Name = "macvlan-standalone-vlan0"
-	MacvlanStandaloneVlan200Name = "macvlan-standalone-vlan100"
-	MacvlanOverlayVlan100Name    = "macvlan-overlay-vlan0"
-	MacvlanOverlayVlan200Name    = "macvlan-overlay-vlan100"
+	MacvlanStandaloneVlan0Name   = "macvlan-standalone-vlan0"
+	MacvlanStandaloneVlan100Name = "macvlan-standalone-vlan100"
+	MacvlanOverlayVlan0Name      = "macvlan-overlay-vlan0"
+	MacvlanOverlayVlan100Name    = "macvlan-overlay-vlan100"
 )
 
 // annotations
@@ -23,6 +26,11 @@ var (
 	MultusAddonAnnotation_Key      = "k8s.v1.cni.cncf.io/networks"
 	SpiderPoolIPPoolAnnotationKey  = "ipam.spidernet.io/ippool"
 	SpiderPoolIPPoolsAnnotationKey = "ipam.spidernet.io/ippools"
+	SpiderPoolIPAnnotationsKey     = []string{
+		"ipam.spidernet.io/assigned-net1",
+		"ipam.spidernet.io/assigned-net2",
+		"ipam.spidernet.io/assigned-eth0",
+	}
 )
 
 var (
@@ -30,3 +38,13 @@ var (
 	CtxTimeout                 = 60 * time.Second
 	ENV_VLAN_GATEWAY_CONTAINER = "VLAN_GATEWAY_CONTAINER"
 )
+var (
+	IPV4 bool
+	IPV6 bool
+)
+
+func init() {
+	IPV4 = os.Getenv("E2E_IPV4_ENABLED") == "true"
+	IPV6 = os.Getenv("E2E_IPV6_ENABLED") == "true"
+
+}

@@ -13,6 +13,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"net"
 	"testing"
 	"time"
 )
@@ -52,11 +53,11 @@ var _ = BeforeSuite(func() {
 	GinkgoWriter.Printf("create namespace %v \n", namespace)
 
 	// get macvlan-standalone multus crd instance by name
-	multusInstance, err := frame.GetMultusInstance(common.MacvlanStandaloneVlan100Name, multuNs)
+	multusInstance, err := frame.GetMultusInstance(common.MacvlanStandaloneVlan0Name, multuNs)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(multusInstance).NotTo(BeNil())
 
-	annotations[common.MultusDefaultAnnotationKey] = fmt.Sprintf("%s/%s", multuNs, common.MacvlanStandaloneVlan100Name)
+	annotations[common.MultusDefaultAnnotationKey] = fmt.Sprintf("%s/%s", multuNs, common.MacvlanStandaloneVlan0Name)
 
 	GinkgoWriter.Printf("create deploy: %v/%v \n", namespace, name)
 	dp = common.GenerateDeploymentYaml(name, namespace, labels, annotations)
@@ -83,30 +84,40 @@ var _ = BeforeSuite(func() {
 	service, err := frame.GetService(name, namespace)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(service).NotTo(BeNil(), "failed to get service: %s/%s", namespace, name)
-	clusterIPs = service.Spec.ClusterIPs
+	for _, ip := range service.Spec.ClusterIPs {
+		if net.ParseIP(ip).To4() == nil && common.IPV6 {
+			clusterIPs = append(clusterIPs, ip)
+		}
+
+		if net.ParseIP(ip).To4() != nil && common.IPV4 {
+			clusterIPs = append(clusterIPs, ip)
+		}
+	}
 	nodePorts = common.GetServiceNodePorts(service.Spec.Ports)
 	GinkgoWriter.Printf("clusterIPs: %v\n", clusterIPs)
 
 	// check service ready by get endpoint
 	err = common.WaitEndpointReady(retryTimes, name, namespace, frame)
 	Expect(err).NotTo(HaveOccurred())
-
 	// get pod all ip
-	podIPs = common.GetIPsFromPods(podList)
+	podIPs, err = common.GetAllIPsFromPods(podList)
+	Expect(err).NotTo(HaveOccurred(), err)
 	Expect(podIPs).NotTo(BeNil())
 	GinkgoWriter.Printf("Get All PodIPs: %v\n", podIPs)
 
+	GinkgoWriter.Printf("Node list : %v \n", frame.Info.KindNodeList)
 	time.Sleep(5 * time.Second)
 })
 
 var _ = AfterSuite(func() {
-	err := frame.DeleteNamespace(namespace)
-	Expect(err).NotTo(HaveOccurred(), "failed to delete namespace %v", namespace)
-
-	err = frame.DeleteDeployment(name, namespace)
+	// delete deployment
+	err := frame.DeleteDeployment(name, namespace)
 	Expect(err).NotTo(HaveOccurred(), "failed to delete deployment %v/%v", namespace, name)
 
 	// delete service
 	err = frame.DeleteService(name, namespace)
 	Expect(err).To(Succeed())
+
+	err = frame.DeleteNamespace(namespace)
+	Expect(err).NotTo(HaveOccurred(), "failed to delete namespace %v", namespace)
 })
