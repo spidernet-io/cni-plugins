@@ -277,7 +277,8 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	}
 	// End previous result parsing
 
-	if err = config.ValidateRoutes(conf.ServiceHijackSubnet, conf.OverlayHijackSubnet); err != nil {
+	conf.ServiceHijackSubnet, conf.OverlayHijackSubnet, err = config.ValidateRoutes(conf.ServiceHijackSubnet, conf.OverlayHijackSubnet)
+	if err != nil {
 		return nil, err
 	}
 
