@@ -50,20 +50,20 @@ docker exec ${containerID} ip link add link ${DEFAULT_INTERFACE} name ${DEFAULT_
 docker exec ${containerID} ip link set ${DEFAULT_INTERFACE}.${VLANID1} up
 docker exec ${containerID} ip link set ${DEFAULT_INTERFACE}.${VLANID2} up
 if [ ${IP_FAMILY} == "ipv4" ]; then
-    docker exec ${containerID} ip addr add 172.100.0.1 dev ${DEFAULT_INTERFACE}.${VLANID1}
-    docker exec ${containerID} ip addr add 172.200.0.1 dev ${DEFAULT_INTERFACE}.${VLANID2}
+    docker exec ${containerID} ip addr add 172.100.0.1/16 dev ${DEFAULT_INTERFACE}.${VLANID1}
+    docker exec ${containerID} ip addr add 172.200.0.1/16 dev ${DEFAULT_INTERFACE}.${VLANID2}
 elif [ ${IP_FAMILY} == "ipv6" ]; then
     docker exec ${containerID}  sysctl -w net.ipv6.conf.${DEFAULT_INTERFACE}/${VLANID1}.disable_ipv6
     docker exec ${containerID}  sysctl -w net.ipv6.conf.${DEFAULT_INTERFACE}/${VLANID2}.disable_ipv6
-    docker exec ${containerID} ip addr add fd00:172:100::1 dev ${DEFAULT_INTERFACE}.${VLANID1}
-    docker exec ${containerID} ip addr add fd00:172:200::1 dev ${DEFAULT_INTERFACE}.${VLANID2}
+    docker exec ${containerID} ip addr add fd00:172:100::1/64 dev ${DEFAULT_INTERFACE}.${VLANID1}
+    docker exec ${containerID} ip addr add fd00:172:200::1/64 dev ${DEFAULT_INTERFACE}.${VLANID2}
 elif [ ${IP_FAMILY} == "dual" ]; then
     docker exec ${containerID}  sysctl -w net.ipv6.conf.${DEFAULT_INTERFACE}/${VLANID1}.disable_ipv6=0
     docker exec ${containerID}  sysctl -w net.ipv6.conf.${DEFAULT_INTERFACE}/${VLANID2}.disable_ipv6=0
-    docker exec ${containerID} ip addr add 172.100.0.1 dev ${DEFAULT_INTERFACE}.${VLANID1}
-    docker exec ${containerID} ip addr add 172.200.0.1 dev ${DEFAULT_INTERFACE}.${VLANID2}
-    docker exec ${containerID} ip addr add fd00:172:100::1 dev ${DEFAULT_INTERFACE}.${VLANID1}
-    docker exec ${containerID} ip addr add fd00:172:200::1 dev ${DEFAULT_INTERFACE}.${VLANID2}
+    docker exec ${containerID} ip addr add 172.100.0.1/16 dev ${DEFAULT_INTERFACE}.${VLANID1}
+    docker exec ${containerID} ip addr add 172.200.0.1/16 dev ${DEFAULT_INTERFACE}.${VLANID2}
+    docker exec ${containerID} ip addr add fd00:172:100::1/64 dev ${DEFAULT_INTERFACE}.${VLANID1}
+    docker exec ${containerID} ip addr add fd00:172:200::1/64 dev ${DEFAULT_INTERFACE}.${VLANID2}
 else
     echo "error ip family, the value of IP_FAMILY must be of ipv4,ipv6 or dual." && exit 1
 fi
