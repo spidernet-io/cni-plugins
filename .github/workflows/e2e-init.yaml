@@ -97,7 +97,6 @@ jobs:
             fi
 
       - name: Show e2e Result For Dual-stack
-        continue-on-error: true
         run: |
           if ${{ steps.e2e.outputs.pass == 'true' }} ;then
               exit 0

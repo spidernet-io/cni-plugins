@@ -97,3 +97,23 @@ jobs:
       push: false
       ref: ${{ needs.get_ref.outputs.ref }}
     secrets: inherit
+
+  call_e2e_ipv4:
+    needs: [get_ref,call_build_e2e_image]
+    if: ${{ needs.get_ref.outputs.run_e2e == 'true' }}
+    uses: ./.github/workflows/e2e-init.yaml
+    with:
+      ip_family: ipv4
+      push: false
+      ref: ${{ needs.get_ref.outputs.ref }}
+    secrets: inherit
+
+  call_e2e_ipv6:
+    needs: [get_ref,call_build_e2e_image]
+    if: ${{ needs.get_ref.outputs.run_e2e == 'true' }}
+    uses: ./.github/workflows/e2e-init.yaml
+    with:
+      ip_family: ipv6
+      push: false
+      ref: ${{ needs.get_ref.outputs.ref }}
+    secrets: inherit
