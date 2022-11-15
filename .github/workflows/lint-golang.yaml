@@ -1,5 +1,8 @@
 name: Auto Golang Lint And Unitest
 
+env:
+  GO_VERSION: "1.19.3"
+
 on:
   pull_request: {}
   push:
@@ -124,15 +127,16 @@ jobs:
     if: ${{ needs.filter_changes.outputs.check == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Setup Golang
-        uses: actions/setup-go@v3
-        with:
-          go-version: 1.19.0
-          id: go
-
-      - name: Install Ginkgo
+      - name: Install Golang/Ginkgo
         run:
-          go install github.com/onsi/ginkgo/v2/ginkgo@v2.3.0
+          GO_PACKAGE="go${{ env.GO_VERSION }}.linux-amd64.tar.gz" ;
+          sudo curl -LO https://go.dev/dl/${GO_PACKAGE} ;
+          sudo tar -xf ${GO_PACKAGE} -C /usr/local/ ;
+          sudo cp /usr/local/go/bin/* /usr/local/bin ;
+          sudo go install github.com/onsi/ginkgo/v2/ginkgo@v2.3.0 ;
+          sudo mv /root/go/bin/ginkgo /usr/local/bin ;
+          sudo go version ;
+          sudo ginkgo version ;
 
       - name: Checkout code
         uses: actions/checkout@v3
@@ -144,10 +148,15 @@ jobs:
       - name: Run unitest
         id: unitest
         run: |
-          make unit-test
+          sudo make unit-test
+          if [ "$?" != "0" ]; then
+            echo "::set-output name=outcome::failed"
+          else
+            exit 0
+          fi
 
       - name: Upload Coverage Artifact
-        if: ${{ steps.unitest.outcome == 'failure' }}
+        if: ${{ steps.unitest.outcome != 'failed' }}
         uses: actions/upload-artifact@v3.1.0
         with:
           name: coverage.out
@@ -155,7 +164,7 @@ jobs:
           retention-days: 1
 
       - name: Upload Report Artifact
-        if: ${{ steps.unitest.outcome == 'failure' }}
+        if: ${{ steps.unitest.outcome != 'failed' }}
         uses: actions/upload-artifact@v3.1.0
         with:
           name: unitestreport.json
@@ -164,7 +173,7 @@ jobs:
 
       # ============= upload coverage report
       - name: Upload to Codecov
-        if: ${{ steps.unitest.outcome != 'failure' }}
+        if: ${{ steps.unitest.outcome != 'failed' }}
         uses: codecov/codecov-action@v3.1.1
         with:
           directory: './'

@@ -13,6 +13,7 @@ import (
 	"k8s.io/utils/pointer"
 	"net"
 	"os"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -272,7 +273,7 @@ func EnableIpv6Sysctl(logger *zap.Logger, netns ns.NetNS) error {
 				logger.Error("failed to read current sysctl value", zap.String("name", name), zap.Error(err))
 				return fmt.Errorf("failed to read current sysctl %+v value: %v", name, err)
 			}
-			// make sure value=1
+			// make sure value=0
 			if value != "0" {
 				if _, err = sysctl.Sysctl(name, "0"); err != nil {
 					logger.Error("failed to set sysctl value to 0 ", zap.String("name", name), zap.Error(err))
@@ -351,7 +352,7 @@ func ruleAdd(logger *zap.Logger, routes []string, routeTable int, enableIpv4, en
 		rule.Family = family
 		rule.Table = routeTable
 		logger.Debug("HijackCustomSubnet Add Rule table", zap.Int("ipfamily", family), zap.String("dst", rule.Dst.String()))
-		if err := netlink.RuleAdd(rule); err != nil && err.Error() != constant.ErrRouteFileExist {
+		if err := netlink.RuleAdd(rule); err != nil && !strings.EqualFold(err.Error(), constant.ErrRouteFileExist) {
 			logger.Error(err.Error())
 			return fmt.Errorf("failed to set ip rule(%+v rule.Dst %v): %+v", rule, rule.Dst, err)
 		}
@@ -422,7 +423,7 @@ func MigrateRoute(logger *zap.Logger, netns ns.NetNS, defaultInterface, chainedI
 }
 
 // AddFromRuleTable add route rule for calico/cilium cidr(ipv4 and ipv6)
-// Equivalent to: `ip rule add from  `
+// Equivalent to: `ip rule add from <cidr> `
 func AddFromRuleTable(logger *zap.Logger, chainedIPs []string, ruleTable int, enableIpv4, enableIpv6 bool) error {
 	logger.Debug("Add FromRule Table in Pod Netns")
 	for _, chainedIP := range chainedIPs {
@@ -660,33 +661,31 @@ func GetNextHopIPs(logger *zap.Logger, ips []string) ([]net.IP, error) {
 	return viaIPs, nil
 }
 
-func RuleDel(netNS ns.NetNS, logger *zap.Logger, ruleTable int, ip string) error {
-	logger.Debug("Del Rule Table", zap.Int("RuleTable", ruleTable), zap.String("ChainedInterface IP", ip))
-	netIP, _, err := net.ParseCIDR(ip)
+func RuleDel(netNS ns.NetNS, logger *zap.Logger, ruleTable int, ips []string) error {
+	logger.Debug("Del Rule Table", zap.Int("RuleTable", ruleTable), zap.Strings("ChainedInterface IP", ips))
+	rules, err := netlink.RuleList(netlink.FAMILY_ALL)
 	if err != nil {
 		logger.Error("failed to del rule table", zap.Error(err))
 		return fmt.Errorf("failed to del rule table %d : %v", ruleTable, err)
 	}
-	dst := &net.IPNet{
-		IP: netIP,
-	}
-	dst.Mask = net.IPMask{}
-	var family int
-	if netIP.To4() != nil {
-		dst.Mask = net.CIDRMask(32, 32)
-	}
-	if netIP.To4() == nil {
-		dst.Mask = net.CIDRMask(128, 128)
+
+	for _, chainedIP := range ips {
+		_, ipnet, err := net.ParseCIDR(chainedIP)
+		if err != nil {
+			logger.Error("failed to del rule table", zap.Error(err))
+			return fmt.Errorf("failed to del rule table %d : %v", ruleTable, err)
+		}
+
+		for _, rule := range rules {
+			if rule.Table == ruleTable && reflect.DeepEqual(rule.Dst, ipnet) {
+				if err = netlink.RuleDel(&rule); err != nil && strings.Contains(err.Error(), ErrFileNotFound) {
+					logger.Error("failed to del rule table", zap.Error(err))
+					return fmt.Errorf("failed to del rule table %d: %v ", ruleTable, err)
+				}
+			}
+		}
 	}
 
-	rule := netlink.NewRule()
-	rule.Family = family
-	rule.Dst = dst
-	rule.Table = ruleTable
-	if err = netlink.RuleDel(rule); err != nil && err.Error() != ErrFileNotFound {
-		logger.Error("failed to del rule table", zap.Error(err))
-		return fmt.Errorf("failed to del rule table %d: %v ", ruleTable, err)
-	}
 	return err
 }
 

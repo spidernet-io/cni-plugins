@@ -157,7 +157,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	// ----------------- Add route table in host ns
-	if err = addChainedIPRoute(logger, netns, *conf.HostRuleTable, conf.DefaultOverlayInterface, chainedInterfaceIps); err != nil {
+	if err = addChainedIPRoute(logger, netns, enableIpv4, enableIpv6, *conf.HostRuleTable, conf.DefaultOverlayInterface, chainedInterfaceIps); err != nil {
 		logger.Error(err.Error())
 		return err
 	}
@@ -243,11 +243,9 @@ func cmdDel(args *skel.CmdArgs) error {
 	}
 	logger.Debug("Get ChainedInterface IPs", zap.String("interface", args.IfName), zap.Strings("IPs", chainedInterfaceIps))
 
-	for _, chainedInterfaceIP := range chainedInterfaceIps {
-		if err = utils.RuleDel(netns, logger, *conf.HostRuleTable, chainedInterfaceIP); err != nil {
-			logger.Error(err.Error())
-			return err
-		}
+	if err = utils.RuleDel(netns, logger, *conf.HostRuleTable, chainedInterfaceIps); err != nil {
+		logger.Error(err.Error())
+		return err
 	}
 
 	logger.Debug("Succeed to call CmdDel for Router-Plugin")
@@ -338,15 +336,15 @@ func addHostIPRoute(logger *zap.Logger, netns ns.NetNS, ruleTable int, defaultIn
 
 // addChainedIPRoute to solve macvlan master/slave interface can't communications directly, we add a route fix it.
 // something like: ip r add <macvlan_ip> dev <overlay_veth_device> on host
-func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, hostRuleTable int, defaultOverlayInterface string, chainedIPs []string) error {
+func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, enableIpv4, enableIpv6 bool, hostRuleTable int, defaultOverlayInterface string, chainedIPs []string) error {
 	// 1. get defaultOverlayInterface IP
 	logger.Debug("Add underlay interface route in host ",
 		zap.String("default overlay interface", defaultOverlayInterface),
 		zap.Strings("underlay interface ips", chainedIPs))
 	var err error
-	var defaultOverlayIP4 net.IP
+	var defaultOverlayIP net.IP
 	err = netNS.Do(func(_ ns.NetNS) error {
-		addrs, err := utils.AddrListByName(defaultOverlayInterface, netlink.FAMILY_V4)
+		addrs, err := utils.AddrListByName(defaultOverlayInterface, netlink.FAMILY_ALL)
 		if err != nil {
 			logger.Error(err.Error())
 			return err
@@ -355,8 +353,14 @@ func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, hostRuleTable int, de
 			if addr.IP.IsMulticast() || addr.IP.IsLinkLocalUnicast() {
 				continue
 			}
-			defaultOverlayIP4 = addr.IP
-			break
+			if defaultOverlayIP.To4() != nil && enableIpv4 {
+				defaultOverlayIP = addr.IP
+				break
+			}
+			if defaultOverlayIP.To4() == nil && enableIpv6 {
+				defaultOverlayIP = addr.IP
+				break
+			}
 		}
 		return nil
 	})
@@ -365,17 +369,17 @@ func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, hostRuleTable int, de
 		return fmt.Errorf("failed to get ipv4 ipaddress for default overlay interface(%s): %v", defaultOverlayInterface, err)
 	}
 	// get overlay veth device via 'ip r get <defaultOverlayIP4>' in host ns
-	routes, err := netlink.RouteGet(defaultOverlayIP4)
+	routes, err := netlink.RouteGet(defaultOverlayIP)
 	if err != nil {
 		logger.Error(err.Error())
-		return fmt.Errorf("failed to ip route get %s: %v", defaultOverlayIP4, err)
+		return fmt.Errorf("failed to ip route get %s: %v", defaultOverlayIP, err)
 	}
 
 	linkIndex := -1
 	// in fact, only one route matched
 	for _, route := range routes {
 		linkIndex = route.LinkIndex
-		logger.Debug("Found default overlay route", zap.String("Default Overlay IP", defaultOverlayIP4.String()), zap.String("Route", route.String()))
+		logger.Debug("Found default overlay route", zap.String("Default Overlay IP", defaultOverlayIP.String()), zap.String("Route", route.String()))
 		break
 	}
 	if linkIndex < 0 {
@@ -389,7 +393,7 @@ func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, hostRuleTable int, de
 		logger.Error(err.Error())
 		return fmt.Errorf("failed to found default overlay veth interface: %v", err)
 	}
-	logger.Debug("Get IPv4 address of default overlay interface", zap.String("default overlay interface ipv4 address", defaultOverlayIP4.String()), zap.String("Overlay-Veth Name", link.Attrs().Name))
+	logger.Debug("Get IPv4 address of default overlay interface", zap.String("default overlay interface ipv4 address", defaultOverlayIP.String()), zap.String("Overlay-Veth Name", link.Attrs().Name))
 
 	hostIPs, err := utils.GetHostIps(logger, true, true)
 	if err != nil {

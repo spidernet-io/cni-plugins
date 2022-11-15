@@ -44,6 +44,7 @@ github.com/containernetworking/cni/pkg/version
 ## explicit; go 1.17
 github.com/containernetworking/plugins/pkg/ip
 github.com/containernetworking/plugins/pkg/ns
+github.com/containernetworking/plugins/pkg/testutils
 github.com/containernetworking/plugins/pkg/utils/buildversion
 github.com/containernetworking/plugins/pkg/utils/sysctl
 # github.com/coreos/go-iptables v0.6.0

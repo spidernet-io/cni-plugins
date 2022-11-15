@@ -19,13 +19,13 @@ for node in ${kind_nodes}; do
   docker exec ${node} ip link add link ${DEFAULT_INTERFACE} name ${DEFAULT_INTERFACE}.${VLANID1} type vlan id ${VLANID1}  || res=$?
   docker exec ${node} ip link add link ${DEFAULT_INTERFACE} name ${DEFAULT_INTERFACE}.${VLANID2} type vlan id ${VLANID2}  || res=$?
   if [[ ${res} -ne "0" ]] && [[ ${res} -ne "2" ]]; then echo failed to create vlan interface for kind-node && exit ${res} ; fi
-  if [ ${IP_FAMILY} == "ipv4" ]; then
+  if [ ${IP_FAMILY} = "ipv4" ]; then
     docker exec ${node} ip addr add ${VLANID1_IP} dev ${DEFAULT_INTERFACE}.${VLANID1}
     docker exec ${node} ip addr add ${VLANID2_IP} dev ${DEFAULT_INTERFACE}.${VLANID2}
-  elif [ ${IP_FAMILY} == "ipv6" ]; then
+  elif [ ${IP_FAMILY} = "ipv6" ]; then
     docker exec ${node} ip addr add ${VLANID1_IP6} dev ${DEFAULT_INTERFACE}.${VLANID1}
     docker exec ${node} ip addr add ${VLANID2_IP6} dev ${DEFAULT_INTERFACE}.${VLANID2}
-  elif [ ${IP_FAMILY} == "dual" ]; then
+  elif [ ${IP_FAMILY} = "dual" ]; then
     docker exec ${node} ip addr add ${VLANID1_IP} dev ${DEFAULT_INTERFACE}.${VLANID1}
     docker exec ${node} ip addr add ${VLANID2_IP} dev ${DEFAULT_INTERFACE}.${VLANID2}
     docker exec ${node} ip addr add ${VLANID1_IP6} dev ${DEFAULT_INTERFACE}.${VLANID1}

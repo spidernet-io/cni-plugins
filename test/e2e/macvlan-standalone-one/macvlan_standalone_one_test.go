@@ -45,7 +45,7 @@ var _ = Describe("MacvlanStandaloneOne", Label("standalone", "one-interface"), f
 		}
 	})
 
-	It("Pod should be access to clusterIP, including ipv4 and ipv6", Label("curl"), func() {
+	It("Pod should be access to clusterIP", Label("curl"), func() {
 		for _, pod := range podList.Items {
 			for _, clusterIP := range clusterIPs {
 				command := common.GetCurlCommandByIPFamily(clusterIP, 80)
@@ -55,7 +55,7 @@ var _ = Describe("MacvlanStandaloneOne", Label("standalone", "one-interface"), f
 		}
 	})
 
-	It("Host should be access to clusterIP, including ipv4 and ipv6", Label("curl"), func() {
+	It("Host should be access to clusterIP", Label("curl"), func() {
 		for _, node := range frame.Info.KindNodeList {
 			for _, clusterIP := range clusterIPs {
 				command := common.GetCurlCommandByIPFamily(clusterIP, 80)
@@ -66,16 +66,10 @@ var _ = Describe("MacvlanStandaloneOne", Label("standalone", "one-interface"), f
 		}
 
 	})
-	It("Host should be access to nodePort address, including ipv4 and ipv6", Label("curl"), func() {
-		var err error
-		nodeIPs, err = common.GetKindNodeIPs(context.TODO(), frame, frame.Info.KindNodeList)
-		Expect(err).NotTo(HaveOccurred(), "failed to get all node ips: %v", err)
-		Expect(nodeIPs).NotTo(BeNil())
-
+	It("Host should be access to nodePort address", Label("curl"), func() {
 		for _, node := range frame.Info.KindNodeList {
 			for _, nodeIP := range nodeIPs {
 				command := common.GetCurlCommandByIPFamily(nodeIP, nodePorts[0])
-				GinkgoWriter.Printf("docker exec -it %s %s", node, command)
 				output, err := frame.DockerExecCommand(context.TODO(), node, command)
 				Expect(err).NotTo(HaveOccurred(), " host %s failed to access to nodePort service %s/%d: %s \n", node, nodeIP, nodePorts[0], output)
 			}

@@ -4513,16 +4513,20 @@ spec:
             - name: CLUSTER_TYPE
               value: "k8s,bgp"
             # Auto-detect the BGP IP address.
+            - name: IP_AUTODETECTION_METHOD
+              value: "<<CALICO_AUTODETECTION_METHOD>>"
+            - name: IP6_AUTODETECTION_METHOD
+              value: "<<CALICO_AUTODETECTION_METHOD>>"
             - name: IP
               value: "<<CALICO_IP_AUTODETECT>>"
             - name: IP6
               value: "<<CALICO_IP6_AUTODETECT>>"
             # Enable IPIP
             - name: CALICO_IPV4POOL_IPIP
-              value: "Always"
+              value: "Never"
             # Enable or Disable VXLAN on the default IP pool.
             - name: CALICO_IPV4POOL_VXLAN
-              value: "Never"
+              value: "Always"
             # Enable or Disable VXLAN on the default IPv6 IP pool.
             - name: CALICO_IPV6POOL_VXLAN
               value: "Never"

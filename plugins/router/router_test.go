@@ -2,11 +2,13 @@ package main
 
 import (
 	"encoding/json"
-	"testing"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-func Test_parseConfig(t *testing.T) {
-	conf := `{
+var _ = Describe("Router", func() {
+	It("test parse config", func() {
+		conf := `{
 		"cniVersion": "0.3.1",
 		"name": "router",
 		"type": "router",
@@ -42,8 +44,9 @@ func Test_parseConfig(t *testing.T) {
 			]
 		}
 	}`
-	pluginConf := &PluginConf{}
-	if err := json.Unmarshal([]byte(conf), pluginConf); err != nil {
-		t.Fatal(err)
-	}
-}
+		pluginConf := &PluginConf{}
+		err := json.Unmarshal([]byte(conf), pluginConf)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+})

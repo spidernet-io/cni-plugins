@@ -136,30 +136,20 @@ func GenerateServiceYaml(name, namespace string, port int32, labels map[string]s
 	}
 }
 
-func GetIPsFromPods(pods *corev1.PodList) []string {
-	var ips []string
-	for _, pod := range pods.Items {
-		for _, podIP := range pod.Status.PodIPs {
-			ips = append(ips, podIP.IP)
-		}
-	}
-	return ips
-}
-
 func GetAllIPsFromPods(pods *corev1.PodList) ([]string, error) {
 	var ips []string
 	var err error
 	for _, pod := range pods.Items {
 		calicoIPs := pod.Annotations["cni.projectcalico.org/podIPs"]
 		for _, v := range strings.Split(calicoIPs, ",") {
-			//if net.ParseIP(v).To4() == nil && !IPV6 {
-			if net.ParseIP(v).To4() == nil {
-				continue
-			} else if net.ParseIP(v).To4() != nil && !IPV4 {
-				continue
+			netip := net.ParseIP(v)
+			if netip.To4() != nil && IPV4 {
+				ips = append(ips, netip.String())
 			}
-			ip, _, _ := net.ParseCIDR(v)
-			ips = append(ips, ip.String())
+			if netip.To4() == nil && IPV6 {
+				// TODO: calico ipv6 issue
+				// ips = append(ips, netip.String())
+			}
 		}
 		for _, v := range SpiderPoolIPAnnotationsKey {
 			spiderpoolIPs, ok := pod.Annotations[v]

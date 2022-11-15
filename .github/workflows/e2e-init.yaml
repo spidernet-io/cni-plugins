@@ -96,7 +96,7 @@ jobs:
                 echo "pass=false" >> $GITHUB_OUTPUT
             fi
 
-      - name: Show e2e Result For Dual-stack
+      - name: Show e2e Result
         run: |
           if ${{ steps.e2e.outputs.pass == 'true' }} ;then
               exit 0

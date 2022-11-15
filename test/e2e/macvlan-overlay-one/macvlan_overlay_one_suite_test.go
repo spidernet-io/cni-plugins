@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"net"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"testing"
 	"time"
 )
@@ -69,9 +70,12 @@ var _ = BeforeSuite(func() {
 	err = frame.WaitPodListRunning(dp.Spec.Selector.MatchLabels, int(*dp.Spec.Replicas), ctx)
 	Expect(err).NotTo(HaveOccurred())
 
-	podList, err = frame.GetDeploymentPodList(dp)
+	podList, err = frame.GetPodList([]client.ListOption{
+		client.InNamespace(namespace),
+		client.MatchingLabels(labels),
+	}...)
 	Expect(err).NotTo(HaveOccurred())
-	Expect(podList).NotTo(BeNil())
+	Expect(len(podList.Items)).To(BeEquivalentTo(int(*dp.Spec.Replicas)))
 
 	// create nodePort service
 	st := common.GenerateServiceYaml(name, namespace, port, dp.Spec.Selector.MatchLabels)
@@ -103,17 +107,18 @@ var _ = BeforeSuite(func() {
 
 	// get pod all ip
 	podIPs, err = common.GetAllIPsFromPods(podList)
-	Expect(err).NotTo(HaveOccurred(), err)
+	Expect(err).NotTo(HaveOccurred())
 	Expect(podIPs).NotTo(BeNil())
 	GinkgoWriter.Printf("Get All PodIPs: %v\n", podIPs)
 
 	nodeIPs, err = common.GetKindNodeIPs(context.TODO(), frame, frame.Info.KindNodeList)
 	Expect(err).NotTo(HaveOccurred(), "failed to get all node ips: %v", err)
 	Expect(nodeIPs).NotTo(BeNil())
-	GinkgoWriter.Printf("Get All Node ips: %v\n", nodeIPs)
 
+	GinkgoWriter.Printf("Get All Node ips: %v\n", nodeIPs)
 	GinkgoWriter.Printf("Node list : %v \n", frame.Info.KindNodeList)
-	time.Sleep(5 * time.Second)
+
+	time.Sleep(10 * time.Second)
 })
 
 var _ = AfterSuite(func() {

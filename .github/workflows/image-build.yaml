@@ -51,7 +51,7 @@ jobs:
           elif ${{ github.event_name == 'pull_request_target' }} ; then
             echo "trigger by pull_request_target"
             echo ::set-output name=tag::${{ github.event.pull_request.head.sha }}
-            echo ::set-output name=version::"latest"
+            echo ::set-output name=version::latest
             echo ::set-output name=push::false
           else
             echo "unexpected event: ${{ github.event_name }}"
@@ -96,7 +96,7 @@ jobs:
         with:
           context: ./
           push: false
-          tags: ghcr.io/${{ github.repository }}/meta-plugins-ci:latest
+          tags: ghcr.io/${{ github.repository }}/meta-plugins-ci:${{ steps.tag.outputs.version }}
           file: ./images/Dockerfile
           github-token: ${{ secrets.GITHUB_TOKEN }}
           platforms: linux/amd64

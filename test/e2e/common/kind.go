@@ -26,13 +26,12 @@ func GetKindNodeIPs(ctx context.Context, f *e2e.Framework, nodeList []string) ([
 		if err != nil {
 			return nil, err
 		}
-		if nodeIP.To4() == nil && !IPV6 {
-			continue
+		if nodeIP.To4() != nil && IPV4 {
+			nodeIPs = append(nodeIPs, nodeIP.String())
 		}
-		if nodeIP.To4() != nil && !IPV4 {
-			continue
+		if nodeIP.To4() == nil && IPV6 {
+			nodeIPs = append(nodeIPs, nodeIP.String())
 		}
-		nodeIPs = append(nodeIPs, nodeIP.String())
 	}
 
 	return nodeIPs, nil
