@@ -7,7 +7,7 @@
 
 ## How to start
 
-1. 安装 Multus-underlay, maclan-type 选择为 macvlan-overlay.
+1. 安装 Multus-underlay, macvlan-type 选择为 macvlan-overlay.
 2. 在 pod 的annotations中注入:
 ```shell
   annotations:
