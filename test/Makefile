@@ -35,9 +35,9 @@ install:
 	echo -e "  \033[35m Start install network-component: \033[0m" ; \
 	if [ ! -f ${E2E_KUBECONFIG} ]; then echo "can't found ${E2E_KUBECONFIG}, please provide the right kubeconfig path using env E2E_KUBECONFIG" && exit 1; fi ; \
 	export CLUSTER_POD_SUBNET_V4=${CLUSTER_POD_SUBNET_V4}; \
-    export CLUSTER_POD_SUBNET_V6=${CLUSTER_POD_SUBNET_V6}; \
-    export CLUSTER_SERVICE_SUBNET_V4=${CLUSTER_SERVICE_SUBNET_V4}; \
-    export CLUSTER_SERVICE_SUBNET_V6=${CLUSTER_SERVICE_SUBNET_V6}; \
+	export CLUSTER_POD_SUBNET_V6=${CLUSTER_POD_SUBNET_V6}; \
+	export CLUSTER_SERVICE_SUBNET_V4=${CLUSTER_SERVICE_SUBNET_V4}; \
+	export CLUSTER_SERVICE_SUBNET_V6=${CLUSTER_SERVICE_SUBNET_V6}; \
 	export CALICO_VERSION=${CALICO_VERSION}; \
 	export E2E_KUBECONFIG=${E2E_KUBECONFIG}; \
 	export IP_FAMILY=${IP_FAMILY} ; \

@@ -25,6 +25,7 @@ else
   export CALICO_IMAGE_REPO=docker.io
 fi
 
+mkdir -p ${PROJECT_ROOT_PATH}/.tmp/config
 cp ${PROJECT_ROOT_PATH}/test/config/calico.yaml ${PROJECT_ROOT_PATH}/.tmp/config/calico.yaml
 
 # Install default-cni
@@ -47,21 +48,21 @@ case ${IP_FAMILY} in
       export CALICO_CNI_ASSIGN_IPV6=false
       export CALICO_IP_AUTODETECT=autodetect
       export CALICO_IP6_AUTODETECT=none
-      export FELIX_IPV6SUPPORT=false
+      export CALICO_FELIX_IPV6SUPPORT=false
     ;;
   ipv6)
       export CALICO_CNI_ASSIGN_IPV4=false
       export CALICO_CNI_ASSIGN_IPV6=true
-      export CALICO_IP_AUTODETECT=none
+      export CALICO_IP_AUTODETECT=autodetect
       export CALICO_IP6_AUTODETECT=autodetect
-      export FELIX_IPV6SUPPORT=true
+      export CALICO_FELIX_IPV6SUPPORT=true
     ;;
   dual)
       export CALICO_CNI_ASSIGN_IPV4=true
       export CALICO_CNI_ASSIGN_IPV6=true
       export CALICO_IP_AUTODETECT=autodetect
       export CALICO_IP6_AUTODETECT=autodetect
-      export FELIX_IPV6SUPPORT=true
+      export CALICO_FELIX_IPV6SUPPORT=true
     ;;
   *)
     echo "the value of IP_FAMILY: ipv4 or ipv6 or dual"
@@ -99,5 +100,8 @@ for CALICO_IMAGE in ${CALICO_IMAGE_LIST}; do
 done
 
 kubectl apply -f  ${PROJECT_ROOT_PATH}/.tmp/config/calico.yaml --kubeconfig ${E2E_KUBECONFIG}
+
 kubectl wait --for=condition=ready -l k8s-app=calico-node --timeout=${INSTALL_TIME_OUT} pod -n kube-system --kubeconfig ${E2E_KUBECONFIG}
+kubectl get po -n kube-system --kubeconfig ${E2E_KUBECONFIG}
+
 echo -e "\033[35m Succeed to install Calico \033[0m"
