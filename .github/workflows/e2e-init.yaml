@@ -82,7 +82,7 @@ jobs:
       - name: update apt-get sources_repo
         id: sources_repo
         run:
-          make -C test update-repo
+          make -C test update-repo IP_FAMILY=${{ inputs.ip_family }}
 
       - name: Run E2E
         id: e2e

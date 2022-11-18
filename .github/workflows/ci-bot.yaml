@@ -21,9 +21,13 @@ env:
     cc
     label-kind
     label-bug
-    label-documentation
+    label-doc
     label-enhancement
     label-question
+    label-kind/bug
+    label-kind/doc
+    label-kind/feature
+    label-kind/cleanup
 
   # This plugins is for organization member or repository member
   MEMBERS_PLUGINS: |-
@@ -49,14 +53,16 @@ env:
 
   REVIEWERS: |-
     cyclinder
+    weizhoublue
   APPROVERS: |-
     cyclinder
+    weizhoublue
   MAINTAINERS: |-
     cyclinder
+    weizhoublue
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   GH_REPOSITORY: ${{ github.repository }}
 jobs:
-
   issue_opened:
     name: Issue Opened
     if: ${{ github.event_name == 'issues' }}

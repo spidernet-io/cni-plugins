@@ -19,7 +19,7 @@ DOWNLOAD_URL="https://github.com/containernetworking/plugins/releases/download/$
 if [ ${RUN_ON_LOCAL} == "true" ]; then DOWNLOAD_URL=https://ghproxy.com/${DOWNLOAD_URL} ; fi
 if [ ! -f  "${PROJECT_ROOT_PATH}/.tmp/plugins/${PACKAGE_NAME}" ]; then
   echo "begin to download cni-plugins ${PACKAGE_NAME} "
-  wget -P ${DOWNLOAD_DIR} https://ghproxy.com/https://github.com/containernetworking/plugins/releases/download/${CNI_PLUGINS_VERSION}/${PACKAGE_NAME}
+  wget -P ${DOWNLOAD_DIR} ${DOWNLOAD_URL}
 else
   echo "${DOWNLOAD_DIR}/${PACKAGE_NAME} exist, Skip download"
 fi
