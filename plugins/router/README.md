@@ -64,9 +64,9 @@ spec:
 
 ```
 
-- `overlay_hijack_subnet`: 缺省CNI(比如calico 或 cilium)的子网信息，包括 IPv4 和 IPv6(可选), 输入格式为 IP+掩码,如10.244.0.0/18。
-- `service_hijack_subnet`: 集群 ClusterIP 的地址，包括 IPv4 和 IPv6 (可选)，输入格式为 IP+掩码,如10.244.0.0/18。
-- `additional_hijack_subnet`: 额外的可自定义的路由集合，输入格式为 IP+掩码,如10.244.0.0/18
+- `overlay_hijack_subnet`: 缺省CNI(比如calico 或 cilium)的子网信息，包括 IPv4 和 IPv6(可选), 输入格式为 IP+掩码,如10.244.0.0/18。插件会下发策略路由，使得这些子网的数据包走overlay_interface接口。
+- `service_hijack_subnet`: 集群 ClusterIP 的地址，包括 IPv4 和 IPv6 (可选)，输入格式为 IP+掩码,如10.244.0.0/18。插件会下发策略路由，使得这些子网的数据包走overlay_interface接口。
+- `additional_hijack_subnet`: 额外的可自定义的路由集合，输入格式为 IP+掩码,如10.244.0.0/18。插件会下发策略路由，使得这些子网的数据包走overlay_interface接口。
 - `migrate_route`: 取值范围`-1,0,1`, 默认为 -1, 表示是否将新增网卡的默认路由移动到一个新的 route table中去。-1 表示通过网卡名自动迁移(eth0 < net1 < net2)，0 为不迁移，-1表示强制迁移。
 - `overlay_interface`: 缺省CNI的网卡名称，默认为"eth0"。
 - `host_rule_table`: 为解决 Macvlan 主接口与子接口不通问题，通过将主机去往子接口的路由写入到此table,实现两者可达。默认为 table 500。
