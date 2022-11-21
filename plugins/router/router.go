@@ -353,11 +353,11 @@ func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, enableIpv4, enableIpv
 			if addr.IP.IsMulticast() || addr.IP.IsLinkLocalUnicast() {
 				continue
 			}
-			if defaultOverlayIP.To4() != nil && enableIpv4 {
+			if addr.IP.To4() != nil && enableIpv4 {
 				defaultOverlayIP = addr.IP
 				break
 			}
-			if defaultOverlayIP.To4() == nil && enableIpv6 {
+			if addr.IP.To4() == nil && enableIpv6 {
 				defaultOverlayIP = addr.IP
 				break
 			}
@@ -368,6 +368,11 @@ func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, enableIpv4, enableIpv
 		logger.Error(err.Error())
 		return fmt.Errorf("failed to get ipv4 ipaddress for default overlay interface(%s): %v", defaultOverlayInterface, err)
 	}
+
+	if defaultOverlayIP == nil {
+		return fmt.Errorf("unexpect defaultOverlayIP is nil, Please ensure if defaultOverlayInterface in pod is exsit")
+	}
+
 	// get overlay veth device via 'ip r get <defaultOverlayIP4>' in host ns
 	routes, err := netlink.RouteGet(defaultOverlayIP)
 	if err != nil {
