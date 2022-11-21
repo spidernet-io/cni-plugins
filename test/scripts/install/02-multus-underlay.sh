@@ -64,6 +64,10 @@ if [ -n ${META_PLUGINS_CI_REPO} ] ;then
   MULTUS_HELM_OPTIONS+=" --set meta-plugins.image.repository=${META_PLUGINS_CI_REPO} "
 fi
 
+if [ -n ${META_PLUGINS_CI_TAG} ] ;then
+  MULTUS_HELM_OPTIONS+=" --set meta-plugins.image.tag=${META_PLUGINS_CI_TAG} "
+fi
+
 echo "MULTUS_HELM_OPTIONS: ${MULTUS_HELM_OPTIONS}"
 
 helm repo add daocloud https://daocloud.github.io/network-charts-repackage/

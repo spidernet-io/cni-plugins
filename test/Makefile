@@ -48,6 +48,7 @@ install:
 	export CNI_PLUGINS_VERSION=${CNI_PLUGINS_VERSION} ; \
 	export RUN_ON_LOCAL=${RUN_ON_LOCAL} ; \
 	export META_PLUGINS_CI_REPO=${META_PLUGINS_CI_REPO} ; \
+	export META_PLUGINS_CI_TAG=${META_PLUGINS_CI_TAG} ; \
 	export SPIDERPOOL_VERSION=${SPIDERPOOL_VERSION} ; \
 	for script in `ls scripts/install/` ; do \
 	  echo "Running $${script}"  ; \
