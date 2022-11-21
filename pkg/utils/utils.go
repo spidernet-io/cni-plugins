@@ -183,10 +183,6 @@ func RouteAdd(logger *zap.Logger, ruleTable int, iface string, ips []string, ena
 	return dst4, dst6, nil
 }
 
-func IsInSubnet(netIP net.IP, subnet net.IPNet) bool {
-	return subnet.Contains(netIP)
-}
-
 // SysctlRPFilter set rp_filter value
 func SysctlRPFilter(logger *zap.Logger, netns ns.NetNS, rp *types.RPFilter) error {
 	var err error

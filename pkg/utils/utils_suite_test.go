@@ -24,9 +24,13 @@ func TestUtils(t *testing.T) {
 	RunSpecs(t, "Utils Suite")
 }
 
+var hostInterface, conInterface net.Interface
 var testNetNs ns.NetNS
 var logger *zap.Logger
 var ipnets [2]*net.IPNet
+
+// change me, default value is eth0 on github runner
+var defaultInterface = "eth0"
 var conVethName, hostVethName, v4IP, v6IP, logPath string
 var err error
 
@@ -60,6 +64,37 @@ func ruleList(table, ipfamily int) ([]netlink.Rule, error) {
 	return filterRules, nil
 }
 
+func routeList(iface string, ips []string, table, ipfamily int) ([]netlink.Route, error) {
+	link, err := netlink.LinkByName(iface)
+	if err != nil {
+		return nil, err
+	}
+
+	filterIPs := make([]net.IP, 0, len(ips))
+	for _, ipStr := range ips {
+		netip, _, err := net.ParseCIDR(ipStr)
+		if err != nil {
+			return nil, err
+		}
+		filterIPs = append(filterIPs, netip)
+	}
+
+	filterRoute := make([]netlink.Route, 0)
+	routes, err := netlink.RouteList(link, ipfamily)
+	for _, route := range routes {
+		for _, filterIP := range filterIPs {
+			if route.Dst != nil && route.Dst.IP.String() == filterIP.String() {
+				filterRoute = append(filterRoute, route)
+			}
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return filterRoute, nil
+}
+
 var _ = BeforeSuite(func() {
 
 	conVethName = generateRandomName()
@@ -83,7 +118,7 @@ var _ = BeforeSuite(func() {
 	// add test ip
 	testNetNs.Do(func(hostNS ns.NetNS) error {
 		// add test ip
-		_, _, err := ip.SetupVethWithName(conVethName, hostVethName, 1500, "", hostNS)
+		hostInterface, conInterface, err = ip.SetupVethWithName(conVethName, hostVethName, 1500, "", hostNS)
 		Expect(err).NotTo(HaveOccurred())
 
 		link, err := netlink.LinkByName(conVethName)

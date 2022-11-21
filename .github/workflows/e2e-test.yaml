@@ -120,6 +120,7 @@ jobs:
 
   create_e2e_issue:
     needs: [call_e2e_dual,call_e2e_ipv4,call_e2e_ipv6]
+    runs-on: ubuntu-latest
     if: github.event_name == 'schedule' && always() && !cancelled() && contains(needs.*.result, 'false')
     steps:
       - name: echo
@@ -131,7 +132,7 @@ jobs:
         uses: dacbd/create-issue-action@v1.2.1
         with:
           token: ${{ secrets.WELAN_PAT }}
-          title: "e2e ci ${{ ENV.TIMESTAMP }}: Failed"
+          title: "Auto E2E CI ${{ ENV.TIMESTAMP }}: Failed(Auto Create)"
           body: |
             action url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           labels: "kind/bug"

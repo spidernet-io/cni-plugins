@@ -8,6 +8,8 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/spidernet-io/cni-plugins/pkg/logging"
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
+	"net"
 	"os"
 )
 
@@ -375,6 +377,199 @@ var _ = Describe("Utils", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 		})
+	})
+
+	Context("test RouteAdd", Label("route"), func() {
+		It("test add ipv4 route", func() {
+			// NOTE: netlink don't support list routes with non-main table, so we use unix.RT_TABLE_MAIN here
+			table := unix.RT_TABLE_MAIN
+			ips := []string{
+				"10.10.10.10/24",
+				"11.11.11.11/24",
+			}
+			_, _, err := RouteAdd(logger, table, defaultInterface, ips, true, false)
+			Expect(err).NotTo(HaveOccurred())
+
+			var routes []netlink.Route
+			routes, err = routeList(defaultInterface, ips, table, netlink.FAMILY_V4)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(routes)).To(BeEquivalentTo(2))
+
+			for _, route := range routes {
+				// clean
+				err = netlink.RouteDel(&route)
+				Expect(err).NotTo(HaveOccurred())
+			}
+		})
+
+		It("test add ipv6 route", func() {
+			// NOTE: netlink don't support list routes with non-main table, so we use unix.RT_TABLE_MAIN here
+			table := unix.RT_TABLE_MAIN
+			ips := []string{
+				"fd00:10:10:10::10/64",
+				"fd00:11:11:11::11/64",
+			}
+			_, _, err := RouteAdd(logger, table, defaultInterface, ips, false, true)
+			Expect(err).NotTo(HaveOccurred())
+
+			var routes []netlink.Route
+			routes, err = routeList(defaultInterface, ips, table, netlink.FAMILY_V6)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(routes)).To(BeEquivalentTo(2))
+
+			for _, route := range routes {
+				// clean
+				err = netlink.RouteDel(&route)
+				Expect(err).NotTo(HaveOccurred())
+			}
+		})
+
+		It("test add ipv4/ipv6 route", func() {
+			// NOTE: netlink don't support list routes with non-main table, so we use unix.RT_TABLE_MAIN here
+			table := unix.RT_TABLE_MAIN
+			ips := []string{
+				"10.10.10.10/24",
+				"fd00:10:10:10::10/64",
+			}
+			_, _, err := RouteAdd(logger, table, defaultInterface, ips, true, true)
+			Expect(err).NotTo(HaveOccurred())
+
+			var routes []netlink.Route
+			routes, err = routeList(defaultInterface, ips, table, netlink.FAMILY_ALL)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(len(routes)).To(BeEquivalentTo(2))
+
+			for _, route := range routes {
+				// clean
+				err = netlink.RouteDel(&route)
+				Expect(err).NotTo(HaveOccurred())
+			}
+		})
+
+		It("test wrong input interface name", func() {
+			// NOTE: netlink don't support list routes with non-main table, so we use unix.RT_TABLE_MAIN here
+			table := unix.RT_TABLE_MAIN
+			ips := []string{
+				"10.10.10.10/24",
+				"fd00:10:10:10::10/64",
+			}
+
+			wrongName := "ens1024"
+
+			_, _, err := RouteAdd(logger, table, wrongName, ips, true, true)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("ips don't match ipfamily, skip add route", func() {
+			table := 304
+			ips := []string{
+				"10.10.10.10/24",
+			}
+
+			_, _, err := RouteAdd(logger, table, defaultInterface, ips, false, true)
+			Expect(err).NotTo(HaveOccurred())
+
+			var routes []netlink.Route
+			routes, err = routeList(defaultInterface, ips, table, netlink.FAMILY_V4)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(routes).To(BeEmpty())
+		})
+	})
+
+	Context("test NeighborAdd", Label("neighbor"), func() {
+		It("test add ipv4 neighbor table", func() {
+			// add a neiborhood table in given netns
+			testNetNs.Do(func(netNS ns.NetNS) error {
+				err = NeighborAdd(logger, conVethName, hostInterface.HardwareAddr.String(), v4IP)
+				Expect(err).NotTo(HaveOccurred())
+
+				// check neighborhood table
+				link, err := netlink.LinkByName(conVethName)
+				Expect(err).NotTo(HaveOccurred())
+
+				var neighs []netlink.Neigh
+				neighs, err = netlink.NeighList(link.Attrs().Index, netlink.FAMILY_V4)
+				Expect(err).NotTo(HaveOccurred())
+
+				found := false
+				netIP, _, err := net.ParseCIDR(v4IP)
+				Expect(err).NotTo(HaveOccurred())
+
+				var neighDst netlink.Neigh
+				for _, neigh := range neighs {
+					if neigh.HardwareAddr.String() == hostInterface.HardwareAddr.String() &&
+						neigh.IP.String() == netIP.String() {
+						neighDst = neigh
+						found = true
+					}
+				}
+				Expect(found).To(BeTrue())
+
+				//clean
+				err = netlink.NeighDel(&neighDst)
+				Expect(err).NotTo(HaveOccurred())
+				return nil
+			})
+		})
+
+		It("wrong input interface name", func() {
+			// add a neiborhood table in given netns
+			testNetNs.Do(func(netNS ns.NetNS) error {
+				err = NeighborAdd(logger, "tmp", hostInterface.HardwareAddr.String(), v4IP)
+				Expect(err).To(HaveOccurred())
+				return nil
+			})
+		})
+
+		It("wrong input interface cidr", func() {
+			// add a neiborhood table in given netns
+			testNetNs.Do(func(netNS ns.NetNS) error {
+				err = NeighborAdd(logger, conVethName, hostInterface.HardwareAddr.String(), "wrong")
+				Expect(err).To(HaveOccurred())
+				return nil
+			})
+		})
+	})
+
+	Context("test GetHostIps", Label("getHostIPs"), func() {
+		It("get host ipv4 ips", func() {
+			ips, err := GetHostIps(logger, true, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ips).NotTo(BeEmpty())
+
+			// only ipv4 ip
+			for _, ipStr := range ips {
+				netip, _, err := net.ParseCIDR(ipStr)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(netip.To4()).NotTo(BeNil())
+			}
+		})
+
+		It("get host ipv6 ips", func() {
+			_, err := GetHostIps(logger, false, true)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("get host ipv4/ipv6 ips", func() {
+			ips, err := GetHostIps(logger, true, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ips).NotTo(BeEmpty())
+		})
+	})
+
+	Context("test CheckInterfaceMiss", Label("check"), func() {
+		It("return false if given interface exist", func() {
+			exist, err := CheckInterfaceMiss(testNetNs, conVethName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(exist).NotTo(BeTrue())
+		})
+
+		It("return true if given interface don't exist", func() {
+			exist, err := CheckInterfaceMiss(testNetNs, "tmp-name")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(exist).To(BeTrue())
+		})
+
 	})
 
 })
