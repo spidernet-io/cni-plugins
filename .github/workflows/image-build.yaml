@@ -110,8 +110,8 @@ jobs:
         if: ${{ steps.tag.outputs.push != 'true' }}
         run: |
           docker images
-          docker save -o /tmp/ci-images.tar ghcr.io/${{ github.repository }}/meta-plugins-ci:latest
-          make lint_image_trivy -e IMAGE_NAME=ghcr.io/${{ github.repository }}/meta-plugins-ci:latest
+          docker save -o /tmp/ci-images.tar ghcr.io/${{ github.repository }}/meta-plugins-ci:${{ steps.tag.outputs.version }}
+          make lint_image_trivy -e IMAGE_NAME=ghcr.io/${{ github.repository }}/meta-plugins-ci:${{ steps.tag.outputs.version }}
 
       - name: Upload artifact e2e image tar
         if: ${{ steps.tag.outputs.push != 'true' }}

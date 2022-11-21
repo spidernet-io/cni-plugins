@@ -20,6 +20,8 @@ on:
 jobs:
   call_e2e:
     runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.e2e.outputs.pass }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -86,20 +88,14 @@ jobs:
 
       - name: Run E2E
         id: e2e
-        continue-on-error: true
         run: |
             RESULT=0
             make -C test e2e IP_FAMILY=${{ inputs.ip_family }} || RESULT=$?
             if ((RESULT==0)) ; then
                 echo "pass=true" >> $GITHUB_OUTPUT
+                exit 0
             else
                 echo "pass=false" >> $GITHUB_OUTPUT
+                exit 1
             fi
 
-      - name: Show e2e Result
-        run: |
-          if ${{ steps.e2e.outputs.pass == 'true' }} ;then
-              exit 0
-          else
-              exit 1
-          fi
