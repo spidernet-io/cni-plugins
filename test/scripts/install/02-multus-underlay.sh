@@ -33,7 +33,7 @@ case ${IP_FAMILY} in
   ipv4)
     MULTUS_HELM_OPTIONS+=" --set cluster_subnet.service_subnet.ipv4=${CLUSTER_SERVICE_SUBNET_V4} \
     --set cluster_subnet.pod_subnet="{${CLUSTER_POD_SUBNET_V4}}" "
-    SERVICE_HIJACK_SUBNET="[${CLUSTER_SERVICE_SUBNET_V4}]"
+    SERVICE_HIJACK_SUBNET="[\"${CLUSTER_SERVICE_SUBNET_V4}\"]"
     OVERLAY_HIJACK_SUBNET="[\"${CLUSTER_POD_SUBNET_V4}\"]"
     ;;
   ipv6)

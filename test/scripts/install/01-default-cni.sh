@@ -19,6 +19,7 @@ CILIUM_VERSION=${CILIUM_VERSION:-v0.12.0}
 [ -z "${INSTALL_TIME_OUT}" ] && INSTALL_TIME_OUT=600s
 
 export CALICO_VERSION=v3.24.0
+export CALICO_AUTODETECTION_METHOD=interface=eth0
 if [ ${RUN_ON_LOCAL} == "true" ]; then
   export CALICO_IMAGE_REPO=docker.m.daocloud.io
 else
@@ -47,7 +48,7 @@ case ${IP_FAMILY} in
       export CALICO_CNI_ASSIGN_IPV4=true
       export CALICO_CNI_ASSIGN_IPV6=false
       export CALICO_IP_AUTODETECT=autodetect
-      export CALICO_IP6_AUTODETECT=none
+      export CALICO_IP6_AUTODETECT=autodetect
       export CALICO_FELIX_IPV6SUPPORT=false
     ;;
   ipv6)

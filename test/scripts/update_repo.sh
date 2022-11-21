@@ -20,5 +20,5 @@ echo -e $source_list >> /etc/apt/source_list
 apt-get update
 apt-get install -y inetutils-ping
 apt-get install -y vim
-apt-get install -y net-tools
-apt-get install -y tcpdump
+# apt-get install -y net-tools
+# apt-get install -y tcpdump
