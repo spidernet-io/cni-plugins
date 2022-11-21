@@ -19,9 +19,10 @@ env:
     assign
     auto-cc
     cc
-    label-kind
-    label-bug
-    label-doc
+    kind/feature
+    kind/bug
+    kind/doc
+    kind/cleanup
     label-enhancement
     label-question
     label-kind/bug
@@ -66,6 +67,7 @@ jobs:
   issue_opened:
     name: Issue Opened
     if: ${{ github.event_name == 'issues' }}
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - uses: wzshiming/gh-ci-bot@v1
@@ -82,6 +84,7 @@ jobs:
   pr_opened:
     name: PR Opened
     if: ${{ github.event_name == 'pull_request' }}
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - uses: wzshiming/gh-ci-bot@v1
@@ -99,6 +102,7 @@ jobs:
             We will review it shortly.
   issue_commented:
     name: Issue Commented
+    continue-on-error: true
     if: ${{ github.event_name == 'issue_comment' && !github.event.issue.pull_request }}
     runs-on: ubuntu-latest
     steps:
@@ -113,6 +117,7 @@ jobs:
 
   pr_review_commented:
     name: PR Review Commented
+    continue-on-error: true
     if: ${{ github.event_name == 'pull_request_review_comment' }}
     runs-on: ubuntu-latest
     steps:
@@ -127,6 +132,7 @@ jobs:
 
   pr_commented:
     name: PR Commented
+    continue-on-error: true
     if: ${{ github.event_name == 'issue_comment' && github.event.issue.pull_request }}
     runs-on: ubuntu-latest
     steps:

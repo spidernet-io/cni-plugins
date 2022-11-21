@@ -150,13 +150,13 @@ jobs:
         run: |
           sudo make unit-test
           if [ "$?" != "0" ]; then
-            echo "::set-output name=outcome::failed"
+            echo "outcome=failed" >> $GITHUB_OUTPUT
           else
-            exit 0
+            echo "outcome=success" >> $GITHUB_OUTPUT
           fi
 
       - name: Upload Coverage Artifact
-        if: ${{ steps.unitest.outcome != 'failed' }}
+        if: ${{ steps.unitest.outcome == 'success' }}
         uses: actions/upload-artifact@v3.1.0
         with:
           name: coverage.out
@@ -164,7 +164,7 @@ jobs:
           retention-days: 1
 
       - name: Upload Report Artifact
-        if: ${{ steps.unitest.outcome != 'failed' }}
+        if: ${{ steps.unitest.outcome == 'success' }}
         uses: actions/upload-artifact@v3.1.0
         with:
           name: unitestreport.json
@@ -173,7 +173,7 @@ jobs:
 
       # ============= upload coverage report
       - name: Upload to Codecov
-        if: ${{ steps.unitest.outcome != 'failed' }}
+        if: ${{ steps.unitest.outcome == 'success' }}
         uses: codecov/codecov-action@v3.1.1
         with:
           directory: './'
