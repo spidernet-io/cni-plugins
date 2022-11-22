@@ -121,7 +121,7 @@ jobs:
   create_e2e_issue:
     needs: [call_e2e_dual,call_e2e_ipv4,call_e2e_ipv6]
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' && always() && !cancelled() && contains(needs.*.result, 'false')
+    if: github.event_name == 'schedule' && always() && !cancelled() && contains(needs.*.result, 'failure')
     steps:
       - name: echo
         run: |
