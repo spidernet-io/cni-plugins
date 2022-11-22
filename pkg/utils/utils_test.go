@@ -572,4 +572,23 @@ var _ = Describe("Utils", func() {
 
 	})
 
+	Context("test AddrListByName", Label("addr"), func() {
+		It("get all ips", func() {
+			testNetNs.Do(func(netNS ns.NetNS) error {
+				addrs, err := AddrListByName(conVethName, netlink.FAMILY_ALL)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(addrs).NotTo(BeEmpty())
+				return nil
+			})
+		})
+
+		It("wrong input name", func() {
+			testNetNs.Do(func(netNS ns.NetNS) error {
+				_, err := AddrListByName("wrong", netlink.FAMILY_ALL)
+				Expect(err).To(HaveOccurred())
+				return nil
+			})
+		})
+	})
+
 })
