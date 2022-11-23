@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	e2e "github.com/spidernet-io/e2eframework/framework"
-	_ "github.com/spidernet-io/spiderpool/test/e2e/common"
 	"net"
 	"strings"
 )
