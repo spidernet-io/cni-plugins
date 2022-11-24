@@ -10,11 +10,9 @@ import (
 	"github.com/spidernet-io/cni-plugins/test/e2e/common"
 	e2e "github.com/spidernet-io/e2eframework/framework"
 	"github.com/spidernet-io/e2eframework/tools"
+	spiderdoctorV1 "github.com/spidernet-io/spiderdoctor/pkg/k8s/apis/spiderdoctor.spidernet.io/v1"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"net"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"testing"
 	"time"
 )
@@ -25,107 +23,63 @@ func TestMacvlanStandaloneOne(t *testing.T) {
 }
 
 var frame *e2e.Framework
-var name, namespace, multuNs string
-
-var podList *corev1.PodList
-var dp *appsv1.Deployment
-var labels, annotations = make(map[string]string), make(map[string]string)
-
-var port int32 = 80
-var nodePorts []int32
-var podIPs, clusterIPs, nodeIPs []string
-
-var retryTimes = 5
+var name string
+var spiderDoctorAgent *appsv1.DaemonSet
+var annotations = make(map[string]string)
+var successRate = float64(1)
+var delayMs = int64(10000)
+var (
+	task        *spiderdoctorV1.Nethttp
+	plan        *spiderdoctorV1.SchedulePlan
+	target      *spiderdoctorV1.NethttpTarget
+	targetAgent *spiderdoctorV1.TargetAgentSepc
+	request     *spiderdoctorV1.NethttpRequest
+	condition   *spiderdoctorV1.NetSuccessCondition
+	run         = true
+)
 
 var _ = BeforeSuite(func() {
 	defer GinkgoRecover()
 	var e error
-	frame, e = e2e.NewFramework(GinkgoT(), []func(*runtime.Scheme) error{multus_v1.AddToScheme, schema.SpiderPoolAddToScheme})
+	task = new(spiderdoctorV1.Nethttp)
+	plan = new(spiderdoctorV1.SchedulePlan)
+	target = new(spiderdoctorV1.NethttpTarget)
+	targetAgent = new(spiderdoctorV1.TargetAgentSepc)
+	request = new(spiderdoctorV1.NethttpRequest)
+	condition = new(spiderdoctorV1.NetSuccessCondition)
+
+	frame, e = e2e.NewFramework(GinkgoT(), []func(*runtime.Scheme) error{multus_v1.AddToScheme, schema.SpiderPoolAddToScheme, spiderdoctorV1.AddToScheme})
 	Expect(e).NotTo(HaveOccurred())
 
-	// init namespace name and create
-	name = "one-macvlan-standalone"
-	namespace = "ns" + tools.RandomName()
-	multuNs = "kube-system"
-	labels["app"] = name
-
-	err := frame.CreateNamespace(namespace)
-	Expect(err).NotTo(HaveOccurred(), "failed to create namespace %v", namespace)
-	GinkgoWriter.Printf("create namespace %v \n", namespace)
+	name = "one-macvlan-standalone-" + tools.RandomName()
 
 	// get macvlan-standalone multus crd instance by name
-	multusInstance, err := frame.GetMultusInstance(common.MacvlanStandaloneVlan0Name, multuNs)
+	multusInstance, err := frame.GetMultusInstance(common.MacvlanStandaloneVlan0Name, common.MultusNs)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(multusInstance).NotTo(BeNil())
 
-	annotations[common.MultusDefaultAnnotationKey] = fmt.Sprintf("%s/%s", multuNs, common.MacvlanStandaloneVlan0Name)
+	annotations[common.MultusDefaultAnnotationKey] = fmt.Sprintf("%s/%s", common.MultusNs, common.MacvlanStandaloneVlan0Name)
 
-	GinkgoWriter.Printf("create deploy: %v/%v \n", namespace, name)
-	dp = common.GenerateDeploymentYaml(name, namespace, labels, annotations)
-	Expect(frame.CreateDeployment(dp)).NotTo(HaveOccurred())
+	GinkgoWriter.Printf("update spiderdoctoragent annotation: %v/%v annotation: %v \n", common.SpiderDoctorAgentNs, common.SpiderDoctorAgentDSName, annotations)
+	spiderDoctorAgent, err = frame.GetDaemonSet(common.SpiderDoctorAgentDSName, common.SpiderDoctorAgentNs)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(spiderDoctorAgent).NotTo(BeNil())
+
+	spiderDoctorAgent.Spec.Template.Annotations = annotations
+	err = frame.UpdateResource(spiderDoctorAgent)
+	Expect(err).NotTo(HaveOccurred())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*common.CtxTimeout)
 	defer cancel()
-
-	err = frame.WaitPodListRunning(dp.Spec.Selector.MatchLabels, int(*dp.Spec.Replicas), ctx)
+	nodeList, err := frame.GetNodeList()
 	Expect(err).NotTo(HaveOccurred())
-
-	podList, err = frame.GetPodList([]client.ListOption{
-		client.InNamespace(namespace),
-		client.MatchingLabels(labels),
-	}...)
+	err = frame.WaitPodListRunning(spiderDoctorAgent.Spec.Selector.MatchLabels, len(nodeList.Items), ctx)
 	Expect(err).NotTo(HaveOccurred())
-	Expect(len(podList.Items)).To(BeEquivalentTo(int(*dp.Spec.Replicas)))
-
-	// create nodePort service
-	st := common.GenerateServiceYaml(name, namespace, port, dp.Spec.Selector.MatchLabels)
-	err = frame.CreateService(st)
-	Expect(err).NotTo(HaveOccurred())
-
-	GinkgoWriter.Printf("succeed to create nodePort service: %s/%s\n", namespace, name)
-
-	// get clusterIPs & nodePorts
-	service, err := frame.GetService(name, namespace)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(service).NotTo(BeNil(), "failed to get service: %s/%s", namespace, name)
-	for _, ip := range service.Spec.ClusterIPs {
-		if net.ParseIP(ip).To4() == nil && common.IPV6 {
-			clusterIPs = append(clusterIPs, ip)
-		}
-
-		if net.ParseIP(ip).To4() != nil && common.IPV4 {
-			clusterIPs = append(clusterIPs, ip)
-		}
-	}
-	nodePorts = common.GetServiceNodePorts(service.Spec.Ports)
-	GinkgoWriter.Printf("clusterIPs: %v\n", clusterIPs)
-
-	// check service ready by get endpoint
-	err = common.WaitEndpointReady(retryTimes, name, namespace, frame)
-	Expect(err).NotTo(HaveOccurred())
-	// get pod all ip
-	podIPs, err = common.GetAllIPsFromPods(podList)
-	Expect(err).NotTo(HaveOccurred(), err)
-	Expect(podIPs).NotTo(BeNil())
-	GinkgoWriter.Printf("Get All PodIPs: %v\n", podIPs)
-
-	nodeIPs, err = common.GetKindNodeIPs(context.TODO(), frame, frame.Info.KindNodeList)
-	Expect(err).NotTo(HaveOccurred(), "failed to get all node ips: %v", err)
-	Expect(nodeIPs).NotTo(BeNil())
-	GinkgoWriter.Printf("Get All NodeIPs: %v\n", nodeIPs)
 
 	time.Sleep(10 * time.Second)
 })
 
 var _ = AfterSuite(func() {
-	// delete deployment
-	err := frame.DeleteDeployment(name, namespace)
-	Expect(err).NotTo(HaveOccurred(), "failed to delete deployment %v/%v", namespace, name)
-
-	// delete service
-	err = frame.DeleteService(name, namespace)
-	Expect(err).To(Succeed())
-
-	err = frame.DeleteNamespace(namespace)
-	Expect(err).NotTo(HaveOccurred(), "failed to delete namespace %v", namespace)
+	err := frame.DeleteResource(task)
+	Expect(err).NotTo(HaveOccurred(), "failed to delete spiderdoctor nethttp %v", name)
 })

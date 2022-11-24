@@ -43,6 +43,12 @@ var (
 	IPV6 bool
 )
 
+var (
+	MultusNs                = "kube-system"
+	SpiderDoctorAgentNs     = "kube-system"
+	SpiderDoctorAgentDSName = "spiderdoctor-agent"
+)
+
 func init() {
 	IPV4 = os.Getenv("E2E_IPV4_ENABLED") == "true"
 	IPV6 = os.Getenv("E2E_IPV6_ENABLED") == "true"

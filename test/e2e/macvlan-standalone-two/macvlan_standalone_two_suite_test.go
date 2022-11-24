@@ -24,7 +24,7 @@ func TestMacvlanStandaloneTwo(t *testing.T) {
 }
 
 var frame *e2e.Framework
-var name, multuNs string
+var name string
 var spiderDoctorAgent *appsv1.DaemonSet
 var annotations = make(map[string]string)
 var successRate = float64(1)
@@ -53,21 +53,18 @@ var _ = BeforeSuite(func() {
 	Expect(e).NotTo(HaveOccurred())
 
 	name = "two-macvlan-standalone-" + tools.RandomName()
-	multuNs = "kube-system"
-	spiderDoctorAgentNs := "kube-system"
-	spiderDoctorAgentDSName := "spiderdoctor-agent"
 
 	// get macvlan-standalone multus crd instance by name
-	multusInstance, err := frame.GetMultusInstance(common.MacvlanStandaloneVlan0Name, multuNs)
+	multusInstance, err := frame.GetMultusInstance(common.MacvlanStandaloneVlan0Name, common.MultusNs)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(multusInstance).NotTo(BeNil())
 
-	annotations[common.MultusDefaultAnnotationKey] = fmt.Sprintf("%s/%s", multuNs, common.MacvlanStandaloneVlan0Name)
-	annotations[common.MultusAddonAnnotation_Key] = fmt.Sprintf("%s/%s", multuNs, common.MacvlanStandaloneVlan100Name)
+	annotations[common.MultusDefaultAnnotationKey] = fmt.Sprintf("%s/%s", common.MultusNs, common.MacvlanStandaloneVlan0Name)
+	annotations[common.MultusAddonAnnotation_Key] = fmt.Sprintf("%s/%s", common.MultusNs, common.MacvlanStandaloneVlan100Name)
 	annotations[common.SpiderPoolIPPoolsAnnotationKey] = `[{"interface": "eth0", "ipv4": ["default-v4-ippool"], "ipv6": ["default-v6-ippool"] },{"interface": "net1", "ipv4": ["vlan100-v4"], "ipv6": ["vlan100-v6"] }]`
 
-	GinkgoWriter.Printf("update spiderdoctoragent annotation: %v/%v annotation: %v \n", spiderDoctorAgentNs, spiderDoctorAgentDSName, annotations)
-	spiderDoctorAgent, err = frame.GetDaemonSet(spiderDoctorAgentDSName, spiderDoctorAgentNs)
+	GinkgoWriter.Printf("update spiderdoctoragent annotation: %v/%v annotation: %v \n", common.SpiderDoctorAgentNs, common.SpiderDoctorAgentDSName, annotations)
+	spiderDoctorAgent, err = frame.GetDaemonSet(common.SpiderDoctorAgentDSName, common.SpiderDoctorAgentNs)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(spiderDoctorAgent).NotTo(BeNil())
 
