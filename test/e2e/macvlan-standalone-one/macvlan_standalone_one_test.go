@@ -17,7 +17,7 @@ var _ = Describe("MacvlanStandaloneOne", Label("standalone", "one-interface"), f
 		task.Name = name
 		// schedule
 		plan.StartAfterMinute = 0
-		plan.RoundNumber = 2
+		plan.RoundNumber = 1
 		plan.IntervalMinute = 2
 		plan.TimeoutMinute = 2
 		task.Spec.Schedule = plan
@@ -33,9 +33,9 @@ var _ = Describe("MacvlanStandaloneOne", Label("standalone", "one-interface"), f
 		target.TargetAgent = targetAgent
 		task.Spec.Target = target
 		// request
-		request.DurationInSecond = 2
+		request.DurationInSecond = 5
 		request.QPS = 1
-		request.PerRequestTimeoutInSecond = 10
+		request.PerRequestTimeoutInSecond = 15
 
 		task.Spec.Request = request
 		// success condition
@@ -44,11 +44,13 @@ var _ = Describe("MacvlanStandaloneOne", Label("standalone", "one-interface"), f
 		condition.MeanAccessDelayInMs = &delayMs
 
 		task.Spec.SuccessCondition = condition
+		taskCopy := task
+
 		GinkgoWriter.Printf("spiderdoctor task: %+v", task)
 		err := frame.CreateResource(task)
 		Expect(err).NotTo(HaveOccurred(), " spiderdoctor nethttp crd create failed")
 
-		err = frame.GetResource(apitypes.NamespacedName{Name: name}, task)
+		err = frame.GetResource(apitypes.NamespacedName{Name: name}, taskCopy)
 		Expect(err).NotTo(HaveOccurred(), " spiderdoctor nethttp crd get failed")
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*60*5)
 		defer cancel()
@@ -58,16 +60,16 @@ var _ = Describe("MacvlanStandaloneOne", Label("standalone", "one-interface"), f
 				run = false
 				Expect(errors.New("wait nethttp test timeout")).NotTo(HaveOccurred(), " running spiderdoctor task timeout")
 			default:
-				err = frame.GetResource(apitypes.NamespacedName{Name: name}, task)
+				err = frame.GetResource(apitypes.NamespacedName{Name: name}, taskCopy)
 				Expect(err).NotTo(HaveOccurred(), " spiderdoctor nethttp crd get failed")
-				if task.Status.Finish == true {
-					for _, v := range task.Status.History {
+				if taskCopy.Status.Finish == true {
+					for _, v := range taskCopy.Status.History {
 						Expect(v.Status).To(Equal("succeed"), "round %d failed", v.RoundNumber)
 					}
 					run = false
 				}
+				time.Sleep(time.Second * 5)
 			}
-			time.Sleep(time.Second * 5)
 		}
 	})
 })

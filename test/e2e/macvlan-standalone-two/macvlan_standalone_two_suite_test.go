@@ -59,6 +59,10 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(multusInstance).NotTo(BeNil())
 
+	multusInstance, err = frame.GetMultusInstance(common.MacvlanStandaloneVlan100Name, common.MultusNs)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(multusInstance).NotTo(BeNil())
+
 	annotations[common.MultusDefaultAnnotationKey] = fmt.Sprintf("%s/%s", common.MultusNs, common.MacvlanStandaloneVlan0Name)
 	annotations[common.MultusAddonAnnotation_Key] = fmt.Sprintf("%s/%s", common.MultusNs, common.MacvlanStandaloneVlan100Name)
 	annotations[common.SpiderPoolIPPoolsAnnotationKey] = `[{"interface": "eth0", "ipv4": ["default-v4-ippool"], "ipv6": ["default-v6-ippool"] },{"interface": "net1", "ipv4": ["vlan100-v4"], "ipv6": ["vlan100-v6"] }]`
