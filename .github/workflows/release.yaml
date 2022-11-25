@@ -97,6 +97,36 @@ jobs:
           tag: ${{ needs.get_ref.outputs.tag }}
           name: "Release ${{ needs.get_ref.outputs.tag }}"
 
+  Generate-Changelog-to-file:
+    runs-on: ubuntu-latest
+    name: Generate Changelog
+    needs: [create-binary-release]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+        with:
+          ref: main
+
+      - name: Save release-note to file
+        id: save
+        run: |
+            latest_release=$(curl -H "Accept: application/vnd.github+json" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest |yq '.name')
+            latest_release=`echo ${latest_release} | awk '{print $2}'`
+            echo "release=${latest_release}" >> $GITHUB_OUTPUT
+            curl \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest |yq '.body' > changelog-${latest_release}.md
+            cat changelog-${latest_release}.md
+            cp -rp changelog-${latest_release}.md docs/
+            cp -rp changelog-${latest_release}.md docs/
+            rm -rf changelog-${latest_release}.md
+
+      - uses: EndBug/add-and-commit@v9 # You can change this to use a specific version.
+        with:
+          add: 'docs'
+          message: "Auto Update Changelog for ${{ steps.save.outputs.release }}"
+
   chart-release:
     name: Create Chart Release
     runs-on: ubuntu-latest
@@ -121,5 +151,7 @@ jobs:
 
       - name: Run chart-releaser
         uses: helm/chart-releaser-action@v1.4.0
+        with:
+          charts_dir: charts
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
