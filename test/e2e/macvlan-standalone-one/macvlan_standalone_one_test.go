@@ -2,77 +2,72 @@ package macvlan_standalone_one_test
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spidernet-io/cni-plugins/test/e2e/common"
-	"os"
+	apitypes "k8s.io/apimachinery/pkg/types"
+	"time"
 )
 
 var _ = Describe("MacvlanStandaloneOne", Label("standalone", "one-interface"), func() {
 
-	It("Host can be communicate with pod, including pod in same and different node", Label("ping"), func() {
-		for _, node := range frame.Info.KindNodeList {
-			for _, podIP := range podIPs {
-				command := common.GetPingCommandByIPFamily(podIP)
-				_, err := frame.DockerExecCommand(context.TODO(), node, command)
-				Expect(err).NotTo(HaveOccurred(), " host %s failed to ping %s: %v,", node, podIP, err)
+	It("spiderdoctor connectivity should be succeed", Label("spiderdoctor"), func() {
+		// create task spiderdoctor crd
+		task.Name = name
+		// schedule
+		plan.StartAfterMinute = 0
+		plan.RoundNumber = 2
+		plan.IntervalMinute = 2
+		plan.TimeoutMinute = 2
+		task.Spec.Schedule = plan
+		// target
+		targetAgent.TestIngress = true
+		targetAgent.TestEndpoint = true
+		targetAgent.TestClusterIp = true
+		targetAgent.TestMultusInterface = true
+		targetAgent.TestNodePort = true
+		targetAgent.TestIPv4 = &common.IPV4
+		targetAgent.TestIPv6 = &common.IPV6
+
+		target.TargetAgent = targetAgent
+		task.Spec.Target = target
+		// request
+		request.DurationInSecond = 2
+		request.QPS = 1
+		request.PerRequestTimeoutInSecond = 10
+
+		task.Spec.Request = request
+		// success condition
+
+		condition.SuccessRate = &successRate
+		condition.MeanAccessDelayInMs = &delayMs
+
+		task.Spec.SuccessCondition = condition
+		GinkgoWriter.Printf("spiderdoctor task: %+v", task)
+		err := frame.CreateResource(task)
+		Expect(err).NotTo(HaveOccurred(), " spiderdoctor nethttp crd create failed")
+
+		err = frame.GetResource(apitypes.NamespacedName{Name: name}, task)
+		Expect(err).NotTo(HaveOccurred(), " spiderdoctor nethttp crd get failed")
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*60*5)
+		defer cancel()
+		for run {
+			select {
+			case <-ctx.Done():
+				run = false
+				Expect(errors.New("wait nethttp test timeout")).NotTo(HaveOccurred(), " running spiderdoctor task timeout")
+			default:
+				err = frame.GetResource(apitypes.NamespacedName{Name: name}, task)
+				Expect(err).NotTo(HaveOccurred(), " spiderdoctor nethttp crd get failed")
+				if task.Status.Finish == true {
+					for _, v := range task.Status.History {
+						Expect(v.Status).To(Equal("succeed"), "round %d failed", v.RoundNumber)
+					}
+					run = false
+				}
 			}
-		}
-	})
-
-	It("Pods in different node can be communicate with each other", Label("ping"), func() {
-		for _, pod := range podList.Items {
-			for _, podIP := range podIPs {
-				command := common.GetPingCommandByIPFamily(podIP)
-				_, err := frame.ExecCommandInPod(pod.Name, pod.Namespace, command, context.TODO())
-				Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("pod %s/%s failed to %s", pod.Namespace, pod.Name, command))
-			}
-		}
-	})
-
-	// ping calico pod ?
-
-	It("remote's client should be access to pod", Label("ping"), func() {
-		// get remote's client container name
-		vlanGatewayName := os.Getenv(common.ENV_VLAN_GATEWAY_CONTAINER)
-		Expect(vlanGatewayName).NotTo(BeEmpty(), "failed to get env 'VLAN_GATEWAY_CONTAINER'")
-
-		for _, podIP := range podIPs {
-			command := common.GetPingCommandByIPFamily(podIP)
-			_, err := frame.DockerExecCommand(context.TODO(), vlanGatewayName, command)
-			Expect(err).To(Succeed())
-		}
-	})
-
-	It("Pod should be access to clusterIP", Label("curl"), func() {
-		for _, pod := range podList.Items {
-			for _, clusterIP := range clusterIPs {
-				command := common.GetCurlCommandByIPFamily(clusterIP, 80)
-				output, err := frame.ExecCommandInPod(pod.Name, pod.Namespace, command, context.TODO())
-				Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("pod %s/%s failed to %s: %s \n", pod.Namespace, pod.Name, command, output))
-			}
-		}
-	})
-
-	It("Host should be access to clusterIP", Label("curl"), func() {
-		for _, node := range frame.Info.KindNodeList {
-			for _, clusterIP := range clusterIPs {
-				command := common.GetCurlCommandByIPFamily(clusterIP, 80)
-				GinkgoWriter.Printf("docker exec -it %s %s", node, command)
-				output, err := frame.DockerExecCommand(context.TODO(), node, command)
-				Expect(err).NotTo(HaveOccurred(), " host %s failed to access to cluster service %s: %s,", node, clusterIP, output)
-			}
-		}
-
-	})
-	It("Host should be access to nodePort address", Label("curl"), func() {
-		for _, node := range frame.Info.KindNodeList {
-			for _, nodeIP := range nodeIPs {
-				command := common.GetCurlCommandByIPFamily(nodeIP, nodePorts[0])
-				output, err := frame.DockerExecCommand(context.TODO(), node, command)
-				Expect(err).NotTo(HaveOccurred(), " host %s failed to access to nodePort service %s/%d: %s \n", node, nodeIP, nodePorts[0], output)
-			}
+			time.Sleep(time.Second * 5)
 		}
 	})
 })
