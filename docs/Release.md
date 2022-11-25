@@ -10,7 +10,7 @@ We automatically release a new release via `github action`, which includes the f
 
 ```shell
 git tag <new tag>
-git push origin <new tag> -m "Release <new tag>"
+git push origin <new tag>"
 ```
 
 > Note: The format of the release message must be in the formort: "Release <New tag>", For example: Release v0.2.0.
@@ -23,6 +23,7 @@ When you push your commit to origin main, Which triggers the `Auto Release` task
 
 If the above checks all passed, Now we start release a new release. 
 
+- Bump version of chart to new tag
 - Create a branch with name release-<tag>
 - Call build binary and upload.
 - Call image build and push it to docker image registry.
