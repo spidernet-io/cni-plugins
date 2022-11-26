@@ -37,7 +37,8 @@ jobs:
         run: |
           if ${{ inputs.ref != '' }} ; then
             echo "call by workflow_call"
-            echo ::set-output name=tag::${{ inputs.ref }}
+            echo "tag=${{ inputs.ref }}" >> $GITHUB_OUTPUT
+            grep " v " <<< " ${{ inputs.ref  }} " && echo "tag=${{ inputs.ref }}" >> $GITHUB_OUTPUT
             echo ::set-output name=version::${{ inputs.ref }}
             echo ::set-output name=push::${{ inputs.push }}
           elif ${{ github.event_name == 'push' }} ; then
