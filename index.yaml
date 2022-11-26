@@ -2,6 +2,21 @@ apiVersion: v1
 entries:
   meta-plugins:
   - apiVersion: v2
+    appVersion: 0.1.9
+    created: "2022-11-26T16:28:21.570501265Z"
+    description: meta-plugins works with macvlan cni to solve some communication problems
+      when macvlan is used as CNI.
+    digest: 0087924c0805dff1e903629733b2cf2a4758793089a24fd039d956f3ed8bb1f1
+    maintainers:
+    - name: Spider-Guys
+    name: meta-plugins
+    sources:
+    - https://github.com/spidernet-io/cni-plugins
+    type: application
+    urls:
+    - https://github.com/spidernet-io/cni-plugins/releases/download/meta-plugins-0.1.9/meta-plugins-0.1.9.tgz
+    version: 0.1.9
+  - apiVersion: v2
     appVersion: v0.1.5
     created: "2022-09-01T06:16:55.720299334Z"
     description: Veth works with macvlan cni to solve some communication problems
@@ -93,4 +108,4 @@ entries:
     urls:
     - https://github.com/spidernet-io/cni-plugins/releases/download/veth-v0.1.1/veth-v0.1.1.tgz
     version: v0.1.1
-generated: "2022-09-01T06:16:55.720320134Z"
+generated: "2022-11-26T16:28:21.570522165Z"
