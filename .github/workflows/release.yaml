@@ -7,6 +7,7 @@ env:
   ONLINE_REGISTER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
   MERGE_BRANCH: gh-pages
   PR_REVIWER: cyclinder
+  PR_LABEL: kind/bug
 
 
 on:
@@ -105,7 +106,8 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v2
         with:
-          ref: main
+          ref: ${{ env.MERGE_BRANCH }}
+          persist-credentials: "true"
 
       - name: Save release-note to file
         id: save
@@ -117,14 +119,20 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
               https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest |yq '.body' > changelog-${latest_release}.md
-            cp -rp changelog-${latest_release}.md docs/
-            cp -rp changelog-${latest_release}.md docs/
-            rm -rf changelog-${latest_release}.md
 
-      - uses: EndBug/add-and-commit@v9 # You can change this to use a specific version.
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v4.2.0
         with:
-          add: 'docs'
-          message: "Auto Update Changelog for ${{ steps.save.outputs.release }}"
+          title: "robot Update changelog-${latest_release}.md to branch ${{ env.MERGE_BRANCH }} "
+          commit-message: "robot Update changelog-${latest_release}.md to branch ${{ env.MERGE_BRANCH }} "
+          branch-suffix: timestamp
+          branch: robot/update_chart
+          delete-branch: true
+          base: ${{ env.MERGE_BRANCH }}
+          signoff: true
+          token: ${{ secrets.WELAN_PAT }}
+          labels: ${{ env.PR_LABEL }}
+          reviewers: ${{ env.PR_REVIWER }}
 
   chart-release:
     name: Create Chart Release
