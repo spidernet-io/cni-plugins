@@ -121,11 +121,6 @@ jobs:
             cp -rp changelog-${latest_release}.md docs/
             rm -rf changelog-${latest_release}.md
 
-      - uses: EndBug/add-and-commit@v9 # You can change this to use a specific version.
-        with:
-          add: 'docs'
-          message: "Auto Update Changelog for ${{ steps.save.outputs.release }}"
-
   chart-release:
     name: Create Chart Release
     runs-on: ubuntu-latest
