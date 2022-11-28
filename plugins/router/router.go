@@ -143,14 +143,14 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("failed to get the number of rule table for interface %s", preInterfaceName)
 	}
 
-	// -----------------  Add route table in pod ns
+	// setup negiborhood to fix pod and host comminication issue
+	if err = utils.AddStaticNeighTable(logger, netns, enableIpv4, enableIpv6, conf.DefaultOverlayInterface, chainedInterfaceIps); err != nil {
+		logger.Error(err.Error())
+		return err
+	}
+
 	if enableIpv6 {
 		if err = utils.EnableIpv6Sysctl(logger, netns); err != nil {
-			logger.Error(err.Error())
-			return err
-		}
-		// setup negiborhood to fix ipv6 communication issue( pod and host )
-		if err = utils.AddNeighTableForIPv6(logger, netns, conf.DefaultOverlayInterface, chainedInterfaceIps); err != nil {
 			logger.Error(err.Error())
 			return err
 		}

@@ -685,11 +685,11 @@ func RuleDel(netNS ns.NetNS, logger *zap.Logger, ruleTable int, ips []string) er
 	return err
 }
 
-// AddNeighTableForIPv6 fix the problem of ipv6 communication failure between pods and hosts by adding neigh table on pod and host
-func AddNeighTableForIPv6(logger *zap.Logger, netns ns.NetNS, defaultOverlayInterface string, chainedInterfaceIps []string) error {
+// AddStaticNeighTable fix the problem of communication failure between pods and hosts by adding neigh table on pod and host
+func AddStaticNeighTable(logger *zap.Logger, netns ns.NetNS, enableIpv4, enableIpv6 bool, defaultOverlayInterface string, chainedInterfaceIps []string) error {
 	parentIndex := -1
 	defaultOverlayMac := ""
-	hostIPs, err := GetHostIps(logger, false, true)
+	hostIPs, err := GetHostIps(logger, enableIpv4, enableIpv6)
 	if err != nil {
 		logger.Error("", zap.Error(err))
 		return err
@@ -788,7 +788,7 @@ func NeighborAdd(logger *zap.Logger, iface, mac string, ipStr string) error {
 		IP:           netIP,
 		HardwareAddr: parseMac(mac),
 	}
-	if err := netlink.NeighAdd(neigh); err != nil && err.Error() != "file exists" {
+	if err := netlink.NeighAdd(neigh); err != nil && !strings.EqualFold(err.Error(), "file exists") {
 		logger.Error("failed to add neigh table", zap.String("interface", iface), zap.String("neigh", neigh.String()), zap.Error(err))
 		return fmt.Errorf("failed to add neigh table: %v ", err)
 	}
