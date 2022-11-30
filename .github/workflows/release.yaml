@@ -31,17 +31,31 @@ jobs:
       - name: Get Ref
         id: get_ref
         run: |
+          tag=""
           if ${{ github.event_name == 'workflow_dispatch' }} ; then
             echo "call by self workflow_dispatch"
-            echo ::set-output name=tag::${{ github.event.inputs.tag }}
+            # check tag if valid
+            grep -Eo "v[0-9]+.[0-9]+.[0-9]" <<< ${{ github.event.inputs.tag }} || ' echo "input tag invalid!"; exit 1 '
+            tag=${{ github.event.inputs.tag }}
             echo ::set-output name=branch::main
           elif ${{ github.event_name == 'push' }} ; then
             echo "call by push tag"
-            echo ::set-output name=tag::${GITHUB_REF##*/}
+            tag=${GITHUB_REF##*/}
             echo ::set-output name=branch::${GITHUB_REF##*/}
           else
             echo "unexpected event: ${{ github.event_name }}"
             exit 1
+          fi
+
+          echo "tag: ${tag}"
+          echo "tag=${tag}" >> $GITHUB_OUTPUT
+          Ybranch=$(grep -Eo "v[0-9]+\.[0-9]+\.0" <<< "${tag}") ||  echo "no create Ybranch..."
+          echo "Ybranch: ${Ybranch} "
+          if [ -n "${Ybranch}" ] ; then
+             echo "create Ybranch..."
+             echo "create_Ybranch=true" >> $GITHUB_OUTPUT
+          else
+             echo "create_Ybranch=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Checkout
@@ -51,6 +65,7 @@ jobs:
           ref: ${{ steps.get_ref.outputs.branch }}
 
       - name: Create branch
+        if: ${{ steps.get_ref.outputs.create_Ybranch == 'true' }}
         uses: peterjgrainger/action-create-branch@v2.2.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -13,7 +13,9 @@ git tag <new tag>
 git push origin <new tag>"
 ```
 
-> Note: The format of the release message must be in the formort: "Release <New tag>", For example: Release v0.2.0.
+> Note: The format of the release message must be in the format: "Release <New tag>", For example: Release v0.2.0.
+> If here is bug fixes, you should release a 'z' tag, like this: "v0.2.1" => "v0.2.2"
+> If here is new feature, you should release a 'y' tag, like this: "v0.2.0" => "v0.3.0".
 
 ## On-Release
 
