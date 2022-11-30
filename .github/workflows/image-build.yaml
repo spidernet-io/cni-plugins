@@ -21,6 +21,12 @@ on:
       push:
         required: false
         type: boolean
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'image tag'
+        required: true
+        default: v0.2.0
 
 permissions: write-all
 
@@ -44,6 +50,12 @@ jobs:
             fi
             echo ::set-output name=version::${{ inputs.ref }}
             echo ::set-output name=push::${{ inputs.push }}
+          elif ${{ inputs.image_tag != '' }} ; then
+            echo "call by workflow_dispatch"
+            echo ${{ inputs.image_tag }}
+            echo "version=${{ inputs.image_tag }}" >> $GITHUB_OUTPUT
+            echo "tag=${{ inputs.image_tag }}" >> $GITHUB_OUTPUT
+            echo "push=true" >>  $GITHUB_OUTPUT
           elif ${{ github.event_name == 'push' }} ; then
             echo "trigger by push"
             echo ::set-output name=tag::${{ github.sha }}
