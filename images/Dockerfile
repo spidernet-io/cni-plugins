@@ -6,7 +6,7 @@ ARG TARGETOS
 ARG TARGETPLATFORM
 
 ADD . /usr/src/cni-plugins
-RUN  cd /usr/src/cni-plugins && GOOS=$TARGETOS GOARCH=$TARGETARCH make build
+RUN  cd /usr/src/cni-plugins && make build -e GOOS=$TARGETOS ARCH=$TARGETARCH
 
 FROM alpine:latest
 LABEL org.opencontainers.image.source https://github.com/spidernet-io/cni-plugins
