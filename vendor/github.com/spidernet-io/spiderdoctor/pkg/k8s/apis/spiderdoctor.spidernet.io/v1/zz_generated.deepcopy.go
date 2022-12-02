@@ -132,8 +132,8 @@ func (in *NetdnsRequest) DeepCopyInto(out *NetdnsRequest) {
 		*out = new(uint64)
 		**out = **in
 	}
-	if in.PerRequestTimeoutInSecond != nil {
-		in, out := &in.PerRequestTimeoutInSecond, &out.PerRequestTimeoutInSecond
+	if in.PerRequestTimeoutInMS != nil {
+		in, out := &in.PerRequestTimeoutInMS, &out.PerRequestTimeoutInMS
 		*out = new(uint64)
 		**out = **in
 	}

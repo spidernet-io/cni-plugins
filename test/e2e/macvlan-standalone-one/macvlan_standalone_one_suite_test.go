@@ -23,9 +23,9 @@ func TestMacvlanStandaloneOne(t *testing.T) {
 }
 
 var frame *e2e.Framework
-var name string
+var deploymentName, name, namespace string
 var spiderDoctorAgent *appsv1.DaemonSet
-var annotations = make(map[string]string)
+var label, annotations = make(map[string]string), make(map[string]string)
 var successRate = float64(1)
 var delayMs = int64(10000)
 var (
@@ -48,15 +48,21 @@ var _ = BeforeSuite(func() {
 	request = new(spiderdoctorV1.NethttpRequest)
 	condition = new(spiderdoctorV1.NetSuccessCondition)
 
+	name = "one-macvlan-standalone-" + tools.RandomName()
+	deploymentName = "one-macvlan-standalone"
+	label["app"] = deploymentName
+	namespace = "ns" + tools.RandomName()
+
 	frame, e = e2e.NewFramework(GinkgoT(), []func(*runtime.Scheme) error{multus_v1.AddToScheme, schema.SpiderPoolAddToScheme, spiderdoctorV1.AddToScheme})
 	Expect(e).NotTo(HaveOccurred())
-
-	name = "one-macvlan-standalone-" + tools.RandomName()
 
 	// get macvlan-standalone multus crd instance by name
 	multusInstance, err := frame.GetMultusInstance(common.MacvlanStandaloneVlan0Name, common.MultusNs)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(multusInstance).NotTo(BeNil())
+
+	err = frame.CreateNamespace(namespace)
+	Expect(err).NotTo(HaveOccurred())
 
 	annotations[common.MultusDefaultAnnotationKey] = fmt.Sprintf("%s/%s", common.MultusNs, common.MacvlanStandaloneVlan0Name)
 
@@ -82,4 +88,8 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	err := frame.DeleteResource(task)
 	Expect(err).NotTo(HaveOccurred(), "failed to delete spiderdoctor nethttp %v", name)
+	err = frame.DeleteDeploymentUntilFinish(deploymentName, namespace, time.Second*60*10)
+	Expect(err).NotTo(HaveOccurred(), "failed to delete deployment %v", deploymentName)
+	err = frame.DeleteNamespace(namespace)
+	Expect(err).NotTo(HaveOccurred(), "failed to delete namespace %v", namespace)
 })

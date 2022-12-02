@@ -1,15 +1,22 @@
 package common
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	e2e "github.com/spidernet-io/e2eframework/framework"
+	spiderdoctorV1 "github.com/spidernet-io/spiderdoctor/pkg/k8s/apis/spiderdoctor.spidernet.io/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 	"net"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
+	"time"
 )
 
 type spiderpoolAnnotation struct {
@@ -17,14 +24,14 @@ type spiderpoolAnnotation struct {
 	IPV6 string `json:"ipv6"`
 }
 
-func GenerateDeploymentYaml(dpmName, namespace string, labels, annotations map[string]string) *appsv1.Deployment {
+func GenerateDeploymentYaml(dpmName, namespace string, labels, annotations map[string]string, replicas int32) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      dpmName,
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: pointer.Int32(2),
+			Replicas: pointer.Int32(replicas),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labels,
 			},
@@ -187,4 +194,40 @@ func GetPingCommandByIPFamily(netIp string) string {
 		command = "ping6"
 	}
 	return fmt.Sprintf("%s %s -c 3", command, netIp)
+}
+
+func WaitSpiderdoctorTaskFinish(f *e2e.Framework, task client.Object, ctx context.Context) error {
+	var err error
+	var tt *spiderdoctorV1.Nethttp
+
+	switch task.(type) {
+	case *spiderdoctorV1.Nethttp:
+		tt = task.(*spiderdoctorV1.Nethttp)
+	default:
+		return errors.New("unknown spiderdoctor task type")
+	}
+
+FINISH:
+	for {
+		select {
+		case <-ctx.Done():
+			return errors.New("wait nethttp test timeout")
+		default:
+			err = f.GetResource(apitypes.NamespacedName{Name: task.GetName()}, tt)
+			if err != nil {
+				return err
+			}
+			if tt.Status.Finish == true {
+				for _, v := range tt.Status.History {
+					if v.Status != "succeed" {
+						return fmt.Errorf("round %d failed", v.RoundNumber)
+					}
+				}
+				break FINISH
+			}
+		}
+		f.Log("wait spiderdoctor task running")
+		time.Sleep(time.Second * 5)
+	}
+	return nil
 }

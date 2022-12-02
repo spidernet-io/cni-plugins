@@ -2,13 +2,11 @@ package macvlan_overlay_one_test
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spidernet-io/cni-plugins/test/e2e/common"
-	apitypes "k8s.io/apimachinery/pkg/types"
 )
 
 var _ = Describe("MacvlanOverlayOne", Label("overlay", "one-nic"), func() {
@@ -37,7 +35,7 @@ var _ = Describe("MacvlanOverlayOne", Label("overlay", "one-nic"), func() {
 		// request
 		request.DurationInSecond = 5
 		request.QPS = 1
-		request.PerRequestTimeoutInSecond = 15
+		request.PerRequestTimeoutInMS = 15000
 
 		task.Spec.Request = request
 		// success condition
@@ -46,32 +44,23 @@ var _ = Describe("MacvlanOverlayOne", Label("overlay", "one-nic"), func() {
 		condition.MeanAccessDelayInMs = &delayMs
 
 		task.Spec.SuccessCondition = condition
-
-		taskCopy := task
-		GinkgoWriter.Printf("spiderdoctor task: %+v", task)
+		GinkgoWriter.Printf("spiderdoctor task: %+v \n", task)
 		err := frame.CreateResource(task)
 		Expect(err).NotTo(HaveOccurred(), " spiderdoctor nethttp crd create failed")
 
-		err = frame.GetResource(apitypes.NamespacedName{Name: name}, taskCopy)
-		Expect(err).NotTo(HaveOccurred(), " spiderdoctor nethttp crd get failed")
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*60*5)
 		defer cancel()
-		for run {
-			select {
-			case <-ctx.Done():
-				run = false
-				Expect(errors.New("wait nethttp test timeout")).NotTo(HaveOccurred(), " running spiderdoctor task timeout")
-			default:
-				err = frame.GetResource(apitypes.NamespacedName{Name: name}, taskCopy)
-				Expect(err).NotTo(HaveOccurred(), " spiderdoctor nethttp crd get failed")
-				if taskCopy.Status.Finish == true {
-					for _, v := range taskCopy.Status.History {
-						Expect(v.Status).To(Equal("succeed"), "round %d failed", v.RoundNumber)
-					}
-					run = false
-				}
-				time.Sleep(time.Second * 5)
-			}
-		}
+		err = common.WaitSpiderdoctorTaskFinish(frame, task, ctx)
+		Expect(err).NotTo(HaveOccurred(), "spiderdoctor task failed")
+	})
+
+	It("50 pod start and stop should be succeed", Label("concurrent"), func() {
+		deployment := common.GenerateDeploymentYaml(deploymentName, namespace, label, annotations, 5)
+		// start pod
+		_, err := frame.CreateDeploymentUntilReady(deployment, 20*common.CtxTimeout)
+		Expect(err).NotTo(HaveOccurred())
+		// stop pod
+		err = frame.RestartDeploymentPodUntilReady(deploymentName, namespace, 20*common.CtxTimeout)
+		Expect(err).NotTo(HaveOccurred())
 	})
 })
