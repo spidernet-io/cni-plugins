@@ -28,6 +28,11 @@ case ${IP_FAMILY} in
     exit 1
 esac
 
+if [ ${RUN_ON_LOCAL} == true ]; then
+  SPIDERDOCTOR_HELM_OPTIONS+=" --set spiderdoctorAgent.image.registry=ghcr.m.daocloud.io \
+   --set spiderdoctorController.image.registry=ghcr.m.daocloud.io "
+fi
+
 echo "SPIDERDOCTOR_HELM_OPTIONS: ${SPIDERDOCTOR_HELM_OPTIONS}"
 
 helm repo add spiderdoctor https://spidernet-io.github.io/spiderdoctor
