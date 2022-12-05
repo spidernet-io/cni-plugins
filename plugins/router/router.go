@@ -238,16 +238,14 @@ func cmdDel(args *skel.CmdArgs) error {
 
 	chainedInterfaceIps, err := utils.GetChainedInterfaceIps(netns, args.IfName, true, true)
 	if err != nil {
-		logger.Error(err.Error())
-		return err
+		logger.Warn("Pod No IPs, Skip call CmdDel", zap.Error(err))
+		return nil
 	}
 	logger.Debug("Get ChainedInterface IPs", zap.String("interface", args.IfName), zap.Strings("IPs", chainedInterfaceIps))
-
 	if err = utils.RuleDel(netns, logger, *conf.HostRuleTable, chainedInterfaceIps); err != nil {
 		logger.Error(err.Error())
 		return err
 	}
-
 	logger.Debug("Succeed to call CmdDel for Router-Plugin")
 	return err
 }
