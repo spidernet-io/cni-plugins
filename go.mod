@@ -6,10 +6,10 @@ require (
 	github.com/containernetworking/cni v1.1.2
 	github.com/containernetworking/plugins v1.1.1
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.3.0
-	github.com/onsi/ginkgo/v2 v2.4.0
-	github.com/onsi/gomega v1.23.0
+	github.com/onsi/ginkgo/v2 v2.5.1
+	github.com/onsi/gomega v1.24.0
 	github.com/spidernet-io/e2eframework v0.0.0-20221020125147-d61d80f9f552
-	github.com/spidernet-io/spiderdoctor v0.2.0
+	github.com/spidernet-io/spiderdoctor v0.2.6
 	github.com/spidernet-io/spiderpool v0.2.2
 	github.com/vishvananda/netlink v1.1.1-0.20210330154013-f5de75959ad5
 	go.uber.org/zap v1.23.0
