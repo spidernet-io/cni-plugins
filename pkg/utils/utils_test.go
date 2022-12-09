@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spidernet-io/cni-plugins/pkg/logging"
+	"github.com/spidernet-io/cni-plugins/pkg/types"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"net"
@@ -588,6 +589,89 @@ var _ = Describe("Utils", func() {
 				Expect(err).To(HaveOccurred())
 				return nil
 			})
+		})
+	})
+
+	Context("test SysctlRPFilter", func() {
+		It("rp_filter value is 0,1,2", func() {
+			for i := 0; i < 3; i++ {
+				value0 := int32(i)
+				enable := true
+				rpFilter := &types.RPFilter{
+					Enable: &enable,
+					Value:  &value0,
+				}
+				err := SysctlRPFilter(logger, testNetNs, rpFilter)
+				Expect(err).NotTo(HaveOccurred())
+			}
+		})
+	})
+
+	Context("test HijackCustomSubnet", func() {
+		It("overlay", func() {
+			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceIPs, 100, true, true)
+			Expect(err).NotTo(HaveOccurred())
+		})
+		It("underlay", func() {
+			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceIPs, 101, true, true)
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context("test MigrateRoute", func() {
+		It("success", func() {
+			err := MigrateRoute(logger, testNetNs, conVethName, conVethName, defaultInterfaceIPs, types.MigrateRoute(-1), 100, true, true)
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+	Context("test AddToRuleTable", func() {
+		It("overlay", func() {
+			err := AddToRuleTable(logger, defaultInterfaceIPs, 100, true, true)
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context("test GetDefaultRouteInterface", func() {
+		It("net1", func() {
+			ifc := GetDefaultRouteInterface("net1")
+			Expect(ifc).To(Equal("eth0"))
+		})
+		It("net2", func() {
+			ifc := GetDefaultRouteInterface("net2")
+			Expect(ifc).To(Equal("net1"))
+		})
+	})
+
+	Context("test GetNextHopIPs", func() {
+		It("success", func() {
+			_, err := GetNextHopIPs(logger, defaultInterfaceIPs)
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context("test compareInterfaceName", func() {
+		It("true", func() {
+			Expect(compareInterfaceName("net1", "eth0")).To(Equal(true))
+		})
+		It("false", func() {
+			Expect(compareInterfaceName("eth0", "net1")).To(Equal(false))
+		})
+	})
+	Context("test AddStaticNeighTable", func() {
+		It("success", func() {
+			err := AddStaticNeighTable(logger, testNetNs, true, true, conVethName, defaultInterfaceIPs)
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context("Test moveRouteTable", func() {
+		It("success", func() {
+			testNetNs.Do(func(netNS ns.NetNS) error {
+				err := moveRouteTable(logger, conVethName, 100, 4)
+				Expect(err).NotTo(HaveOccurred())
+				return nil
+			})
+
 		})
 	})
 
