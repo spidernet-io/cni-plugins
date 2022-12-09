@@ -3,6 +3,7 @@ module github.com/spidernet-io/cni-plugins
 go 1.19
 
 require (
+	github.com/agiledragon/gomonkey/v2 v2.9.0
 	github.com/containernetworking/cni v1.1.2
 	github.com/containernetworking/plugins v1.1.1
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.3.0

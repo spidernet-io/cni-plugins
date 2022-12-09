@@ -56,4 +56,5 @@ unit-test:
 	 ginkgo version ; \
 	 ginkgo --cover --coverprofile=coverage.out --covermode set \
 	 	--json-report unitestreport.json --label-filter="${LABELS}" -randomize-suites -randomize-all --keep-going \
-  	 	--timeout=1h   --slow-spec-threshold=120s -vv  -r pkg plugins/*  ; go tool cover -html=./coverage.out -o coverage-all.html
+  	 	--timeout=1h   --slow-spec-threshold=120s -vv  -r pkg/* plugins/*
+	go tool cover -html=./coverage.out -o coverage-all.html

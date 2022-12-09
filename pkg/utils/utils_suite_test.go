@@ -28,6 +28,8 @@ var hostInterface, conInterface net.Interface
 var testNetNs ns.NetNS
 var logger *zap.Logger
 var ipnets [2]*net.IPNet
+var serviceSubnet, overlaySubnet = []string{"10.96.0.0/16", "fd00:10:96::/112"}, []string{"10.244.0.0/16", "fd00:10:244::/56"}
+var defaultInterfaceIPs = []string{"10.96.0.12/24"}
 
 // change me, default value is eth0 on github runner
 var defaultInterface = "eth0"
@@ -114,7 +116,6 @@ var _ = BeforeSuite(func() {
 	// create net ns
 	testNetNs, err = testutils.NewNS()
 	Expect(err).NotTo(HaveOccurred())
-
 	// add test ip
 	testNetNs.Do(func(hostNS ns.NetNS) error {
 		// add test ip
