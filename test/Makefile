@@ -28,7 +28,7 @@ e2e:
 	  export E2E_IPV4_ENABLED=true ; export E2E_IPV6_ENABLED=true ; \
 	fi ; \
 	ginkgo --race --timeout=${E2E_TIMEOUT} --output-interceptor-mode=none --json-report e2ereport.json --output-dir ${ROOT_DIR}/../.tmp \
-	 --label-filter="${E2E_GINKGO_LABELS}"  -randomize-suites -randomize-all  -vv --fail-fast ${E2E_GINKGO_OPTIONS} -r e2e/*
+	 --label-filter="${E2E_GINKGO_LABELS}"  -randomize-suites -randomize-all -vv --fail-fast ${E2E_GINKGO_OPTIONS} -r e2e/*
 
 .PHONY: install
 install:

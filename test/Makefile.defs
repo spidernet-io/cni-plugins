@@ -25,7 +25,7 @@ RUN_ON_LOCAL=false
 META_PLUGINS_CI_REPO=ghcr.m.daocloud.io/spidernet-io/cni-plugins/meta-plugins
 
 # Spiderpool
-SPIDERPOOL_VERSION=0.3.2
+SPIDERPOOL_VERSION=0.3.5
 
 # spiderdoctor
-SPIDERDOCTOR_VERSION=0.2.1
+SPIDERDOCTOR_VERSION=0.2.6

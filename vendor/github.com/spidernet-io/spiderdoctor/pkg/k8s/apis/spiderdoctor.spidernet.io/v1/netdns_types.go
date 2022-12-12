@@ -41,7 +41,7 @@ type NetdnsRequest struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default=5
 	// +kubebuilder:validation:Minimum=1
-	PerRequestTimeoutInSecond *uint64 `json:"perRequestTimeoutInSecond,omitempty"`
+	PerRequestTimeoutInMS *uint64 `json:"perRequestTimeoutInMS,omitempty"`
 }
 
 // scope(Namespaced or Cluster)

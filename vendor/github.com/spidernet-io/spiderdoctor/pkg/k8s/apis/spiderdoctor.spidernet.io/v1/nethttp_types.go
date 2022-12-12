@@ -37,7 +37,7 @@ type NethttpRequest struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default=5
 	// +kubebuilder:validation:Minimum=1
-	PerRequestTimeoutInSecond int `json:"perRequestTimeoutInSecond,omitempty"`
+	PerRequestTimeoutInMS int `json:"perRequestTimeoutInMS,omitempty"`
 }
 
 type TargetAgentSepc struct {

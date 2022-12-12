@@ -24,13 +24,12 @@ func TestMacvlanOverlayTwo(t *testing.T) {
 }
 
 var frame *e2e.Framework
-var name string
+var deploymentName, name, namespace string
 var spiderDoctorAgent *appsv1.DaemonSet
-var annotations = make(map[string]string)
+var label, annotations = make(map[string]string), make(map[string]string)
 var successRate = float64(1)
 var delayMs = int64(10000)
 var testIPv6 = false
-
 var (
 	task        *spiderdoctorV1.Nethttp
 	plan        *spiderdoctorV1.SchedulePlan
@@ -55,6 +54,9 @@ var _ = BeforeSuite(func() {
 	Expect(e).NotTo(HaveOccurred())
 
 	name = "two-macvlan-overlay-" + tools.RandomName()
+	deploymentName = "two-macvlan-overlay"
+	label["app"] = deploymentName
+	namespace = "ns" + tools.RandomName()
 
 	// get macvlan-overlay multus crd instance by name
 	multusInstance, err := frame.GetMultusInstance(common.MacvlanOverlayVlan0Name, common.MultusNs)
@@ -64,6 +66,9 @@ var _ = BeforeSuite(func() {
 	multusInstance, err = frame.GetMultusInstance(common.MacvlanOverlayVlan100Name, common.MultusNs)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(multusInstance).NotTo(BeNil())
+
+	err = frame.CreateNamespace(namespace)
+	Expect(err).NotTo(HaveOccurred())
 
 	annotations[common.MultusAddonAnnotation_Key] = fmt.Sprintf("%s/%s,%s/%s", common.MultusNs, common.MacvlanOverlayVlan0Name, common.MultusNs, common.MacvlanOverlayVlan100Name)
 	annotations[common.SpiderPoolIPPoolsAnnotationKey] = `[{"interface": "net1", "ipv4": ["default-v4-ippool"], "ipv6": ["default-v6-ippool"]},{"interface": "net2", "ipv4": ["vlan100-v4"], "ipv6": ["vlan100-v6"]}]`
@@ -90,4 +95,8 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	err := frame.DeleteResource(task)
 	Expect(err).NotTo(HaveOccurred(), "failed to delete spiderdoctor nethttp %v", name)
+	err = frame.DeleteDeploymentUntilFinish(deploymentName, namespace, time.Second*60*10)
+	Expect(err).NotTo(HaveOccurred(), "failed to delete deployment %v", deploymentName)
+	err = frame.DeleteNamespace(namespace)
+	Expect(err).NotTo(HaveOccurred(), "failed to delete namespace %v", namespace)
 })
