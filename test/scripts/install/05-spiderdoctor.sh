@@ -6,7 +6,7 @@ SPIDERDOCTOR_VERSION=${SPIDERDOCTOR_VERSION:-0.2.1}
 
 [ -z ${INSTALL_TIME_OUT} ] && INSTALL_TIME_OUT=600s
 
-SPIDERDOCTOR_HELM_OPTIONS=""
+SPIDERDOCTOR_HELM_OPTIONS=" "
 case ${IP_FAMILY} in
   ipv4)
     SPIDERDOCTOR_HELM_OPTIONS+=" --set feature.enableIPv4=true \
@@ -36,7 +36,7 @@ fi
 echo "SPIDERDOCTOR_HELM_OPTIONS: ${SPIDERDOCTOR_HELM_OPTIONS}"
 
 helm repo add spiderdoctor https://spidernet-io.github.io/spiderdoctor
-
+helm repo update
 HELM_IMAGES_LIST=` helm template test spiderdoctor/spiderdoctor --version ${SPIDERDOCTOR_VERSION} ${SPIDERDOCTOR_HELM_OPTIONS} | grep " image: " | tr -d '"'| awk '{print $2}' `
 
 [ -z "${HELM_IMAGES_LIST}" ] && echo "can't found image of SPIDERDOCTOR" && exit 1
@@ -58,7 +58,7 @@ for IMAGE in ${HELM_IMAGES_LIST}; do
 done
 
 # Install SPIDERDOCTOR
-helm install spiderdoctor spiderdoctor/spiderdoctor --wait -n kube-system --kubeconfig ${E2E_KUBECONFIG} ${SPIDERDOCTOR_HELM_OPTIONS} --version ${SPIDERDOCTOR_VERSION}
+helm install spiderdoctor spiderdoctor/spiderdoctor -n kube-system --kubeconfig ${E2E_KUBECONFIG} ${SPIDERDOCTOR_HELM_OPTIONS} --version ${SPIDERDOCTOR_VERSION}
 kubectl wait --for=condition=ready -l app.kubernetes.io/name=spiderdoctor --timeout=${INSTALL_TIME_OUT} pod -n kube-system \
 --kubeconfig ${E2E_KUBECONFIG}
 

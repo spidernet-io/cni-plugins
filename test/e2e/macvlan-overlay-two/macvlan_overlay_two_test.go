@@ -23,7 +23,7 @@ var _ = Describe("MacvlanOverlayTwo", Label("overlay", "two-interface"), func() 
 		plan.TimeoutMinute = 2
 		task.Spec.Schedule = plan
 		// target
-		targetAgent.TestIngress = true
+		targetAgent.TestIngress = false
 		targetAgent.TestEndpoint = true
 		targetAgent.TestClusterIp = true
 		targetAgent.TestMultusInterface = true

@@ -28,4 +28,4 @@ META_PLUGINS_CI_REPO=ghcr.m.daocloud.io/spidernet-io/cni-plugins/meta-plugins
 SPIDERPOOL_VERSION=0.3.2
 
 # spiderdoctor
-SPIDERDOCTOR_VERSION=0.2.1
+SPIDERDOCTOR_VERSION=0.3.0
