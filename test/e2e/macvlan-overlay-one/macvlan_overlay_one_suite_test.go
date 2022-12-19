@@ -27,7 +27,7 @@ var name string
 var spiderDoctorAgent *appsv1.DaemonSet
 var annotations = make(map[string]string)
 var successRate = float64(1)
-var delayMs = int64(10000)
+var delayMs = int64(15000)
 var testIPv6 = false
 var (
 	task        *spiderdoctorV1.Nethttp
@@ -78,7 +78,7 @@ var _ = BeforeSuite(func() {
 	err = frame.WaitPodListRunning(spiderDoctorAgent.Spec.Selector.MatchLabels, len(nodeList.Items), ctx)
 	Expect(err).NotTo(HaveOccurred())
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(30 * time.Second)
 })
 
 var _ = AfterSuite(func() {

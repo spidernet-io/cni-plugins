@@ -18,12 +18,12 @@ var _ = Describe("MacvlanOverlayOne", Label("overlay", "one-nic"), func() {
 		task.Name = name
 		// schedule
 		plan.StartAfterMinute = 0
-		plan.RoundNumber = 2
+		plan.RoundNumber = 1
 		plan.IntervalMinute = 2
 		plan.TimeoutMinute = 2
 		task.Spec.Schedule = plan
 		// target
-		targetAgent.TestIngress = true
+		targetAgent.TestIngress = false
 		targetAgent.TestEndpoint = true
 		targetAgent.TestClusterIp = true
 		targetAgent.TestMultusInterface = true

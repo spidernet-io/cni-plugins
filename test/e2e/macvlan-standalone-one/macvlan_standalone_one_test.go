@@ -22,7 +22,7 @@ var _ = Describe("MacvlanStandaloneOne", Label("standalone", "one-interface"), f
 		plan.TimeoutMinute = 2
 		task.Spec.Schedule = plan
 		// target
-		targetAgent.TestIngress = true
+		targetAgent.TestIngress = false
 		targetAgent.TestEndpoint = true
 		targetAgent.TestClusterIp = true
 		targetAgent.TestMultusInterface = true
