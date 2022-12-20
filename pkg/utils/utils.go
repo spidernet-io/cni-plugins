@@ -285,7 +285,7 @@ func EnableIpv6Sysctl(logger *zap.Logger, netns ns.NetNS) error {
 // HijackCustomSubnet set ip rule : to Subnet table $routeTable
 // if first macvlan interface, move service/pod subnet route to table 100: ip rule add from all to service/pod look table 100
 // else only move custom route to table <ruleTable>: ip rule add from all to <custom_subnet> look table <ruletable>
-func HijackCustomSubnet(logger *zap.Logger, netns ns.NetNS, serviceSubnet, overlaySubnet, additionalSubnet, chainedSubnet, defaultInterfaceIPs []string, routeTable int, enableIpv4, enableIpv6 bool) error {
+func HijackCustomSubnet(logger *zap.Logger, netns ns.NetNS, serviceSubnet, overlaySubnet, additionalSubnet, defaultInterfaceIPs []string, routeTable int, enableIpv4, enableIpv6 bool) error {
 	logger.Debug(fmt.Sprintf("Hijack Custom Subnet to %v ", routeTable), zap.String("Netns Path", netns.Path()),
 		zap.Bool("enableIpv4", enableIpv4),
 		zap.Bool("enableIpv6", enableIpv6))

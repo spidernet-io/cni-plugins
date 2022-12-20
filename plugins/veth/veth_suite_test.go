@@ -20,9 +20,10 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestRouter(t *testing.T) {
+func TestVeth(t *testing.T) {
+	defer GinkgoRecover()
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Router Suite")
+	RunSpecs(t, "Veth Suite")
 }
 
 var hostInterface, conInterface net.Interface
@@ -31,7 +32,7 @@ var logger *zap.Logger
 var logPath = "/tmp/meta-plugins/tmp.log"
 var containerID = "testtesttesttest"
 var defaultInterface = "eth0"
-var hostVethName, secondifName, overlayifName, v4IP, v6IP, v4IP2, v6IP2 string
+var conVethName, hostVethName, v4IP, v6IP string
 var err error
 var defaultInterfaceIPs = []string{"10.96.0.12/24"}
 
@@ -53,19 +54,10 @@ func generateRandomName() string {
 var _ = BeforeSuite(func() {
 	defer GinkgoRecover()
 	var err error
-	//v4IP = "10.6.212.100/16"
-	//v6IP = "fd00:10:6:212::100/64"
-	//v4IP2 = "10.6.172.100/16"
-	//v6IP2 = "fd00:10:6:172::100/64"
-
-	v4IP = "172.17.2.0/16"
-	v6IP = "fd00:172:17:2::100/64"
-	v4IP2 = "172.17.2.0/16"
-	v6IP2 = "fd00:172:17:2::100/64"
+	v4IP = "10.6.212.100/16"
+	v6IP = "fd00:10:6:212::100/64"
 	ipnets := generateIPNet(v4IP, v6IP)
-	ipnets2 := generateIPNet(v4IP2, v6IP2)
-	secondifName = "net1"
-	overlayifName = "eth0"
+	conVethName = "net1"
 	hostVethName = generateRandomName()
 	if logging.LoggerFile == nil {
 		logOptions := logging.InitLogOptions(&types.LogOptions{LogFilePath: logPath})
@@ -81,39 +73,22 @@ var _ = BeforeSuite(func() {
 	// add test ip
 	testNetNs.Do(func(hostNS ns.NetNS) error {
 		// add test ip
-		hostInterface, conInterface, err = ip.SetupVethWithName(overlayifName, hostVethName, 1500, "", hostNS)
+		hostInterface, conInterface, err = ip.SetupVethWithName(conVethName, hostVethName, 1500, "", hostNS)
 		Expect(err).NotTo(HaveOccurred())
 
-		err = netlink.LinkAdd(&netlink.Dummy{
-			LinkAttrs: netlink.LinkAttrs{
-				Name: secondifName,
-			},
-		})
-		overlaylink, err := netlink.LinkByName(overlayifName)
+		link, err := netlink.LinkByName(conVethName)
 		Expect(err).NotTo(HaveOccurred())
 
-		secondlink, err := netlink.LinkByName(secondifName)
-		Expect(err).NotTo(HaveOccurred())
-
-		err = netlink.LinkSetUp(secondlink)
-		Expect(err).NotTo(HaveOccurred())
-
-		err = netlink.LinkSetUp(overlaylink)
+		err = netlink.LinkSetUp(link)
 		Expect(err).NotTo(HaveOccurred())
 
 		err = utils.EnableIpv6Sysctl(logger, testNetNs)
 		Expect(err).NotTo(HaveOccurred())
 
 		for _, ipnet := range ipnets {
-			err = netlink.AddrAdd(overlaylink, &netlink.Addr{IPNet: ipnet})
+			err = netlink.AddrAdd(link, &netlink.Addr{IPNet: ipnet})
 			Expect(err).NotTo(HaveOccurred())
 		}
-
-		for _, ipnet := range ipnets2 {
-			err = netlink.AddrAdd(secondlink, &netlink.Addr{IPNet: ipnet})
-			Expect(err).NotTo(HaveOccurred())
-		}
-
 		return nil
 	})
 })
@@ -126,5 +101,5 @@ var _ = AfterSuite(func() {
 		Expect(err).NotTo(HaveOccurred())
 		os.RemoveAll(testNetNs.Path())
 	}
-	//os.RemoveAll(logPath)
+	os.RemoveAll(logPath)
 })

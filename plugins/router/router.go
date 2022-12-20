@@ -178,7 +178,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	// add route in pod: custom subnet via DefaultOverlayInterface:  overlay subnet / clusterip subnet ...custom route
-	if err = utils.HijackCustomSubnet(logger, netns, conf.ServiceHijackSubnet, conf.OverlayHijackSubnet, conf.AdditionalHijackSubnet, chainedInterfaceIps, defaultInterfaceIPs, ruleTable, enableIpv4, enableIpv6); err != nil {
+	if err = utils.HijackCustomSubnet(logger, netns, conf.ServiceHijackSubnet, conf.OverlayHijackSubnet, conf.AdditionalHijackSubnet, defaultInterfaceIPs, ruleTable, enableIpv4, enableIpv6); err != nil {
 		logger.Error(err.Error())
 		return err
 	}

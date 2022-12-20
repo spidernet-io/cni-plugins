@@ -149,7 +149,7 @@ jobs:
         id: unitest
         run: |
           sudo make unit-test
-          if [ "$?" != "0" ]; then
+          if [ $? -ne 0 ]; then
             echo "outcome=failed" >> $GITHUB_OUTPUT
             exit 1
           else
