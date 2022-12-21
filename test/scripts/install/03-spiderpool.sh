@@ -59,9 +59,13 @@ case ${IP_FAMILY} in
     exit 1
 esac
 
+if [ ${RUN_ON_LOCAL} == false ]; then
+  SPIDERPOOL_HELM_OPTIONS+=" --set spiderpool.global.imageRegistryOverride=ghcr.io "
+fi
+
 echo "SPIDERPOOL_HELM_OPTIONS: ${SPIDERPOOL_HELM_OPTIONS}"
 
-helm repo add daocloud https://daocloud.github.io/network-charts-repackage/
+helm repo add daocloud https://daocloud.github.io/dce-charts-repackage/
 
 HELM_IMAGES_LIST=` helm template test daocloud/spiderpool --version ${SPIDERPOOL_VERSION} ${SPIDERPOOL_HELM_OPTIONS} | grep " image: " | tr -d '"'| awk '{print $2}' `
 
