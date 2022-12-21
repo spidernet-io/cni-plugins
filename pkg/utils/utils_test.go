@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
+	"github.com/agiledragon/gomonkey/v2"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/containernetworking/plugins/pkg/utils/sysctl"
 	. "github.com/onsi/ginkgo/v2"
@@ -12,6 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 	"net"
 	"os"
+	"regexp"
 )
 
 var _ = Describe("Utils", func() {
@@ -59,6 +62,23 @@ var _ = Describe("Utils", func() {
 			Expect(len(ips)).To(BeEquivalentTo(2))
 			Expect(ips).To(BeEquivalentTo([]string{ipnets[0].String(), ipnets[1].String()}))
 		})
+
+		It("net interface err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(net.Interfaces, nil, errors.New("interface err"))
+			_, err := GetChainedInterfaceIps(testNetNs, conVethName, true, true)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("parseCIDR err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(net.ParseCIDR, nil, nil, errors.New("parseCIDR err"))
+			_, err := GetChainedInterfaceIps(testNetNs, conVethName, true, false)
+			Expect(err).To(HaveOccurred())
+
+		})
 	})
 
 	Context("test EnableIpv6Sysctl", Label("disable_ipv6"), func() {
@@ -82,6 +102,41 @@ var _ = Describe("Utils", func() {
 				return err
 			})
 			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("os err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(os.ReadDir, nil, errors.New("os err"))
+			err := EnableIpv6Sysctl(logging.LoggerFile, testNetNs)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("sysctl err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(sysctl.Sysctl, nil, errors.New("sysctl err"))
+			err := EnableIpv6Sysctl(logging.LoggerFile, testNetNs)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("sysctl value return not 0", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(sysctl.Sysctl, "1", nil)
+			err := EnableIpv6Sysctl(logging.LoggerFile, testNetNs)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("sysctl2 value return not 0 err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncSeq(sysctl.Sysctl, []gomonkey.OutputCell{
+				{Values: gomonkey.Params{"1", nil}},
+				{Values: gomonkey.Params{"0", errors.New("sysctl err")}},
+			})
+			err := EnableIpv6Sysctl(logging.LoggerFile, testNetNs)
+			Expect(err).To(HaveOccurred())
 		})
 	})
 
@@ -293,6 +348,21 @@ var _ = Describe("Utils", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 		})
+
+		It("netlink ruleAdd err", func() {
+			table := 200
+			routes := []string{
+				"2.2.2.0/24",
+				"3.3.3.0/24",
+			}
+			err := testNetNs.Do(func(netNS ns.NetNS) error {
+				patches := gomonkey.NewPatches()
+				defer patches.Reset()
+				patches.ApplyFuncReturn(netlink.RuleAdd, errors.New("rule add err"))
+				return ruleAdd(logger, routes, table, true, false)
+			})
+			Expect(err).To(HaveOccurred())
+		})
 	})
 
 	Context("test AddFromRuleTable", Label("from-rule"), func() {
@@ -377,6 +447,40 @@ var _ = Describe("Utils", func() {
 				return RuleDel(testNetNs, logger, table, chainedIPs)
 			})
 			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("ParseCIDR err", func() {
+			table := 207
+
+			chainedIPs := []string{
+				"10.10.10.0/24",
+			}
+
+			err := testNetNs.Do(func(netNS ns.NetNS) error {
+				patches := gomonkey.NewPatches()
+				defer patches.Reset()
+				patches.ApplyFuncReturn(net.ParseCIDR, nil, nil, errors.New("parseCIDR err"))
+				return AddFromRuleTable(logger, chainedIPs, table, true, false)
+			})
+			Expect(err).To(HaveOccurred())
+
+		})
+
+		It("netlink.RuleAdd err", func() {
+			table := 207
+
+			chainedIPs := []string{
+				"10.10.10.0/24",
+			}
+
+			err := testNetNs.Do(func(netNS ns.NetNS) error {
+				patches := gomonkey.NewPatches()
+				defer patches.Reset()
+				patches.ApplyFuncReturn(netlink.RuleAdd, errors.New("parseCIDR err"))
+				return AddFromRuleTable(logger, chainedIPs, table, true, false)
+			})
+			Expect(err).To(HaveOccurred())
+
 		})
 	})
 
@@ -475,6 +579,34 @@ var _ = Describe("Utils", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(routes).To(BeEmpty())
 		})
+
+		It("parseCIDR err", func() {
+			// NOTE: netlink don't support list routes with non-main table, so we use unix.RT_TABLE_MAIN here
+			table := unix.RT_TABLE_MAIN
+			ips := []string{
+				"10.10.10.10/24",
+				"11.11.11.11/24",
+			}
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(net.ParseCIDR, nil, nil, errors.New("parseCIDR err"))
+			_, _, err := RouteAdd(logger, table, defaultInterface, ips, true, false)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("route add err", func() {
+			// NOTE: netlink don't support list routes with non-main table, so we use unix.RT_TABLE_MAIN here
+			table := unix.RT_TABLE_MAIN
+			ips := []string{
+				"10.10.10.10/24",
+				"11.11.11.11/24",
+			}
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(netlink.RouteAdd, errors.New("parseCIDR err"))
+			_, _, err := RouteAdd(logger, table, defaultInterface, ips, true, false)
+			Expect(err).To(HaveOccurred())
+		})
 	})
 
 	Context("test NeighborAdd", Label("neighbor"), func() {
@@ -530,6 +662,18 @@ var _ = Describe("Utils", func() {
 				return nil
 			})
 		})
+
+		It("test add ipv4 neighbor add failed", func() {
+			// add a neiborhood table in given netns
+			testNetNs.Do(func(netNS ns.NetNS) error {
+				patches := gomonkey.NewPatches()
+				defer patches.Reset()
+				patches.ApplyFuncReturn(netlink.NeighAdd, errors.New("NeighAdd failed"))
+				err = NeighborAdd(logger, conVethName, hostInterface.HardwareAddr.String(), v4IP)
+				Expect(err).To(HaveOccurred())
+				return nil
+			})
+		})
 	})
 
 	Context("test GetHostIps", Label("getHostIPs"), func() {
@@ -555,6 +699,22 @@ var _ = Describe("Utils", func() {
 			ips, err := GetHostIps(logger, true, true)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ips).NotTo(BeEmpty())
+		})
+
+		It("net Interface err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(net.Interfaces, nil, errors.New("interface err"))
+			_, err := GetHostIps(logger, true, true)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("regexp Compile err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(regexp.Compile, nil, errors.New("regexp err"))
+			_, err := GetHostIps(logger, true, true)
+			Expect(err).To(HaveOccurred())
 		})
 	})
 
@@ -590,6 +750,17 @@ var _ = Describe("Utils", func() {
 				return nil
 			})
 		})
+
+		It("AddrList failed", func() {
+			testNetNs.Do(func(netNS ns.NetNS) error {
+				patches := gomonkey.NewPatches()
+				defer patches.Reset()
+				patches.ApplyFuncReturn(netlink.AddrList, nil, errors.New("AddrList err"))
+				_, err := AddrListByName(conVethName, netlink.FAMILY_ALL)
+				Expect(err).To(HaveOccurred())
+				return nil
+			})
+		})
 	})
 
 	Context("test SysctlRPFilter", func() {
@@ -605,6 +776,38 @@ var _ = Describe("Utils", func() {
 				Expect(err).NotTo(HaveOccurred())
 			}
 		})
+
+		It("setRPFilter err", func() {
+			for i := 0; i < 3; i++ {
+				value0 := int32(i)
+				enable := true
+				rpFilter := &types.RPFilter{
+					Enable: &enable,
+					Value:  &value0,
+				}
+				patches := gomonkey.NewPatches()
+				defer patches.Reset()
+				patches.ApplyFuncReturn(setRPFilter, errors.New("setRPFilter err"))
+				err := SysctlRPFilter(logger, testNetNs, rpFilter)
+				Expect(err).To(HaveOccurred())
+			}
+		})
+
+		It("netns setRPFilter err", func() {
+			for i := 0; i < 3; i++ {
+				value0 := int32(i)
+				enable := false
+				rpFilter := &types.RPFilter{
+					Enable: &enable,
+					Value:  &value0,
+				}
+				patches := gomonkey.NewPatches()
+				defer patches.Reset()
+				patches.ApplyFuncReturn(setRPFilter, errors.New("setRPFilter err"))
+				err := SysctlRPFilter(logger, testNetNs, rpFilter)
+				Expect(err).To(HaveOccurred())
+			}
+		})
 	})
 
 	Context("test HijackCustomSubnet", func() {
@@ -616,18 +819,92 @@ var _ = Describe("Utils", func() {
 			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceIPs, 101, true, true)
 			Expect(err).NotTo(HaveOccurred())
 		})
+
+		It("overlay ruleAdd err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncSeq(ruleAdd, []gomonkey.OutputCell{
+				{Values: gomonkey.Params{errors.New("rule add err")}},
+				{Values: gomonkey.Params{nil}},
+			})
+			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceIPs, 100, true, true)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("overlay ruleAdd2 err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncSeq(ruleAdd, []gomonkey.OutputCell{
+				{Values: gomonkey.Params{nil}},
+				{Values: gomonkey.Params{errors.New("rule add err")}},
+			})
+			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceIPs, 100, true, true)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("underlay ruleAdd2 err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncSeq(ruleAdd, []gomonkey.OutputCell{
+				{Values: gomonkey.Params{nil}},
+				{Values: gomonkey.Params{errors.New("rule add err")}},
+			})
+			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceIPs, 101, true, true)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("underlay ruleAdd2 err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncSeq(ruleAdd, []gomonkey.OutputCell{
+				{Values: gomonkey.Params{errors.New("rule add err")}},
+				{Values: gomonkey.Params{nil}},
+			})
+			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceIPs, 101, true, true)
+			Expect(err).To(HaveOccurred())
+		})
 	})
 
 	Context("test MigrateRoute", func() {
-		It("success", func() {
+		It("success MigrateRoute -1", func() {
 			err := MigrateRoute(logger, testNetNs, conVethName, conVethName, defaultInterfaceIPs, types.MigrateRoute(-1), 100, true, true)
 			Expect(err).NotTo(HaveOccurred())
 		})
+
+		It("success MigrateRoute 0", func() {
+			err := MigrateRoute(logger, testNetNs, conVethName, conVethName, defaultInterfaceIPs, types.MigrateRoute(0), 100, true, true)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("success MigrateRoute -1 compare false", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(compareInterfaceName, false)
+			err := MigrateRoute(logger, testNetNs, conVethName, conVethName, defaultInterfaceIPs, types.MigrateRoute(-1), 100, true, true)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
 	})
 	Context("test AddToRuleTable", func() {
 		It("overlay", func() {
 			err := AddToRuleTable(logger, defaultInterfaceIPs, 100, true, true)
 			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("parseCIDR err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(net.ParseCIDR, nil, nil, errors.New("parseCIDR err"))
+			err := AddToRuleTable(logger, defaultInterfaceIPs, 100, true, true)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("netlink RuleAdd err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(netlink.RuleAdd, errors.New("netlink.RuleAdd err"))
+			err := AddToRuleTable(logger, defaultInterfaceIPs, 100, true, true)
+			Expect(err).To(HaveOccurred())
 		})
 	})
 
@@ -647,6 +924,22 @@ var _ = Describe("Utils", func() {
 			_, err := GetNextHopIPs(logger, defaultInterfaceIPs)
 			Expect(err).NotTo(HaveOccurred())
 		})
+
+		It("parseCIDR", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(net.ParseCIDR, nil, nil, errors.New("parseCIDR err"))
+			_, err := GetNextHopIPs(logger, defaultInterfaceIPs)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("netlink.RouteGet err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(netlink.RouteGet, nil, errors.New("route get err"))
+			_, err := GetNextHopIPs(logger, defaultInterfaceIPs)
+			Expect(err).To(HaveOccurred())
+		})
 	})
 
 	Context("test compareInterfaceName", func() {
@@ -662,6 +955,38 @@ var _ = Describe("Utils", func() {
 			err := AddStaticNeighTable(logger, testNetNs, true, true, conVethName, defaultInterfaceIPs)
 			Expect(err).NotTo(HaveOccurred())
 		})
+
+		It("GetHostIps err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(GetHostIps, nil, errors.New("get host err"))
+			err := AddStaticNeighTable(logger, testNetNs, true, true, conVethName, defaultInterfaceIPs)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("LinkByName err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(netlink.LinkByName, nil, errors.New("linkByName err"))
+			err := AddStaticNeighTable(logger, testNetNs, true, true, conVethName, defaultInterfaceIPs)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("netlink.LinkByIndex err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(netlink.LinkByIndex, nil, errors.New("LinkByIndex err"))
+			err := AddStaticNeighTable(logger, testNetNs, true, true, conVethName, defaultInterfaceIPs)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("ParseCIDR err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(net.ParseCIDR, nil, nil, errors.New("LinkByIndex err"))
+			err := AddStaticNeighTable(logger, testNetNs, true, true, conVethName, defaultInterfaceIPs)
+			Expect(err).To(HaveOccurred())
+		})
 	})
 
 	Context("Test moveRouteTable", func() {
@@ -672,6 +997,44 @@ var _ = Describe("Utils", func() {
 				return nil
 			})
 
+		})
+	})
+
+	Context("Test setRPFilter", func() {
+		It("success", func() {
+			var v *int32
+			err := setRPFilter(logger, v)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("os err", func() {
+			var v *int32
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(os.ReadDir, nil, errors.New("os err"))
+			err := setRPFilter(logger, v)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("sysctl err", func() {
+			var v *int32
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(sysctl.Sysctl, nil, errors.New("sysctl err"))
+			err := setRPFilter(logger, v)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("sysctl2 err", func() {
+			var v *int32
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncSeq(sysctl.Sysctl, []gomonkey.OutputCell{
+				{Values: gomonkey.Params{nil, nil}},
+				{Values: gomonkey.Params{nil, errors.New("sysctl err")}},
+			})
+			err := setRPFilter(logger, v)
+			Expect(err).To(HaveOccurred())
 		})
 	})
 

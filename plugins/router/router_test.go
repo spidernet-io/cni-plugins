@@ -12,6 +12,7 @@ import (
 	"github.com/spidernet-io/cni-plugins/pkg/logging"
 	"github.com/spidernet-io/cni-plugins/pkg/utils"
 	"github.com/vishvananda/netlink"
+	"net"
 )
 
 var _ = Describe("Router", func() {
@@ -192,6 +193,30 @@ var _ = Describe("Router", func() {
 			err := addHostIPRoute(logger, testNetNs, 100, secondifName, true, true)
 			Expect(err).NotTo(HaveOccurred())
 		})
+
+		It("GetHostIps failed", func() {
+			patchees := gomonkey.NewPatches()
+			defer patchees.Reset()
+			patchees.ApplyFuncReturn(utils.GetHostIps, nil, errors.New("GetHostIps err"))
+			err := addHostIPRoute(logger, testNetNs, 101, secondifName, true, true)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("overlay add route failed", func() {
+			patchees := gomonkey.NewPatches()
+			defer patchees.Reset()
+			patchees.ApplyFuncReturn(utils.RouteAdd, nil, nil, errors.New("utils.RouteAdd err"))
+			err := addHostIPRoute(logger, testNetNs, 100, secondifName, true, true)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("underlay add route failed failed", func() {
+			patchees := gomonkey.NewPatches()
+			defer patchees.Reset()
+			patchees.ApplyFuncReturn(utils.RouteAdd, nil, nil, errors.New("RouteAdd err"))
+			err := addHostIPRoute(logger, testNetNs, 101, secondifName, true, true)
+			Expect(err).To(HaveOccurred())
+		})
 	})
 
 	Context("Test addChainedIPRoute", func() {
@@ -229,6 +254,44 @@ var _ = Describe("Router", func() {
 			Expect(err).To(HaveOccurred())
 		})
 
+		It("netlink.LinkByIndex failed", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(utils.GetHostIps, []string{"10.96.0.13/16"}, nil)
+			patches.ApplyFuncReturn(netlink.LinkByIndex, nil, errors.New("netlink.LinkByIndex err"))
+			err := addChainedIPRoute(logger, testNetNs, true, true, 100, secondifName, defaultInterfaceIPs)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("parseCIDR failed", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(utils.GetHostIps, []string{"10.96.0.13/16"}, nil)
+			patches.ApplyFuncReturn(net.ParseCIDR, nil, nil, errors.New("parseCIDR err"))
+			err := addChainedIPRoute(logger, testNetNs, true, true, 100, secondifName, defaultInterfaceIPs)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("parseCIDR failed", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(utils.GetHostIps, []string{"10.96.0.13/16"}, nil)
+			patches.ApplyFuncSeq(net.ParseCIDR, []gomonkey.OutputCell{
+				{Values: gomonkey.Params{nil, nil, nil}},
+				{Values: gomonkey.Params{nil, nil, errors.New("parseCIDR err")}},
+			})
+			err := addChainedIPRoute(logger, testNetNs, true, true, 100, secondifName, defaultInterfaceIPs)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("netlink.RuleAdd failed", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(utils.GetHostIps, []string{"10.96.0.13/16"}, nil)
+			patches.ApplyFuncReturn(netlink.RuleAdd, errors.New("netlink.RuleAdd err"))
+			err := addChainedIPRoute(logger, testNetNs, true, true, 100, secondifName, defaultInterfaceIPs)
+			Expect(err).To(HaveOccurred())
+		})
 	})
 
 	Context("Test cmdAdd", func() {
