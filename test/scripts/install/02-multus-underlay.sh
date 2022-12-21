@@ -70,7 +70,7 @@ fi
 
 echo "MULTUS_HELM_OPTIONS: ${MULTUS_HELM_OPTIONS}"
 
-helm repo add daocloud https://daocloud.github.io/network-charts-repackage/
+helm repo add daocloud https://daocloud.github.io/dce-charts-repackage/
 # prepare image
 HELM_IMAGES_LIST=` helm template test daocloud/multus-underlay --version ${MULTUS_UNDERLAY_VERSION} ${MULTUS_HELM_OPTIONS} | grep " image: " | tr -d '"'| awk '{print $2}' `
 
