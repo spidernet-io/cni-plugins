@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"github.com/agiledragon/gomonkey/v2"
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/100"
+	"github.com/containernetworking/cni/pkg/version"
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	. "github.com/onsi/ginkgo/v2"
@@ -141,6 +143,84 @@ var _ = Describe("Veth", func() {
 			_, err := parseConfig(stdin)
 			Expect(err).To(Equal(errors.New("the subnet of service clusterip must be given")))
 		})
+
+		It("json unmarshal err", func() {
+			var stdin = []byte(`{
+				"cniVersion": "0.3.1",
+				"name": "veth",
+				"type": "veth",
+				"service_hijack_subnet": ["10.244.64.0/18"],
+				"overlay_hijack_subnet": ["10.244.0.0/18"],
+				"rp_filter": {
+					"enable": true,
+					"value": 0
+				},
+				"prevResult": {
+					"interfaces": [
+						{"name": "host"},
+						{"name": "container", "sandbox":"netns"}
+					],
+					"ips": [
+						{
+							"version": "4",
+							"address": "10.0.0.1/24",
+							"gateway": "10.0.0.1",
+							"interface": 0
+						},
+						{
+							"version": "6",
+							"address": "2001:db8:1::2/64",
+							"gateway": "2001:db8:1::1",
+							"interface": 0
+						}
+					]
+				}
+			}`)
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(json.Unmarshal, errors.New("unmarshal err"))
+			_, err := parseConfig(stdin)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("parsePrevResult err", func() {
+			var stdin = []byte(`{
+				"cniVersion": "0.3.1",
+				"name": "veth",
+				"type": "veth",
+				"service_hijack_subnet": ["10.244.64.0/18"],
+				"overlay_hijack_subnet": ["10.244.0.0/18"],
+				"rp_filter": {
+					"enable": true,
+					"value": 0
+				},
+				"prevResult": {
+					"interfaces": [
+						{"name": "host"},
+						{"name": "container", "sandbox":"netns"}
+					],
+					"ips": [
+						{
+							"version": "4",
+							"address": "10.0.0.1/24",
+							"gateway": "10.0.0.1",
+							"interface": 0
+						},
+						{
+							"version": "6",
+							"address": "2001:db8:1::2/64",
+							"gateway": "2001:db8:1::1",
+							"interface": 0
+						}
+					]
+				}
+			}`)
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(version.ParsePrevResult, errors.New("parsePrevResult err"))
+			_, err := parseConfig(stdin)
+			Expect(err).To(HaveOccurred())
+		})
 	})
 
 	Context("Test setupVeth", func() {
@@ -160,6 +240,33 @@ var _ = Describe("Veth", func() {
 			patches.ApplyFuncReturn(netlink.LinkByName, &netlink.Dummy{netlink.LinkAttrs{HardwareAddr: net.HardwareAddr("test")}}, nil)
 			_, _, err := setupVeth(logger, testNetNs, false, containerID, pr)
 			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("first interface linkByName err", func() {
+			pr := &current.Result{}
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(netlink.LinkByName, &netlink.Dummy{netlink.LinkAttrs{HardwareAddr: net.HardwareAddr("test")}}, errors.New("linkByName err"))
+			_, _, err := setupVeth(logger, testNetNs, false, containerID, pr)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It(" SetupVethWithName err", func() {
+			pr := &current.Result{}
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(ip.SetupVethWithName, nil, nil, errors.New("SetupVethWithName err"))
+			_, _, err := setupVeth(logger, testNetNs, true, containerID, pr)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It(" setLinkup err", func() {
+			pr := &current.Result{}
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(setLinkup, errors.New("setLinkup err"))
+			_, _, err := setupVeth(logger, testNetNs, true, containerID, pr)
+			Expect(err).To(HaveOccurred())
 		})
 	})
 
@@ -257,7 +364,7 @@ var _ = Describe("Veth", func() {
 				"type": "veth",
 				"service_hijack_subnet": ["10.244.64.0/18"],
 				"overlay_hijack_subnet": ["10.244.0.0/18"],
-                "skip_call": true,
+	          "skip_call": true,
 				"rp_filter": {
 					"enable": true,
 					"value": 0
@@ -893,6 +1000,95 @@ var _ = Describe("Veth", func() {
 			err := cmdAdd(args)
 			Expect(err).To(HaveOccurred())
 		})
+
+	})
+
+	Context("Test addSubnetRoute", func() {
+		var routers = []string{"10.244.64.0/18", "2001:db8:1::2/64"}
+		var destIPv4 = net.ParseIP("10.244.64.10")
+		var destIPv6 = net.ParseIP("2001:db8:1::10")
+
+		It("success", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(netlink.RouteAdd, nil)
+			err := addSubnetRoute(logger, routers, 100, 1, true, true, &destIPv4, &destIPv6)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("parseCIDR err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(net.ParseCIDR, nil, nil, errors.New("parseCIDR err"))
+			err := addSubnetRoute(logger, routers, 100, 1, true, true, &destIPv4, &destIPv6)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("not gateway", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			err := addSubnetRoute(logger, routers, 100, 1, false, false, nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("add route err", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(netlink.RouteAdd, errors.New("add route err"))
+			err := addSubnetRoute(logger, routers, 100, 1, true, true, &destIPv4, &destIPv6)
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Context("Test setupRoutes", func() {
+
+		var hInterface = &current.Interface{Name: hostVethName}
+		var cInterface = &current.Interface{Name: conVethName}
+		hostIPs := []string{"10.244.64.0/18"}
+		conIPs := []string{"10.244.64.0/18"}
+		var stdin = []byte(`{
+				"cniVersion": "0.3.1",
+				"name": "veth",
+				"type": "veth",
+				"service_hijack_subnet": ["10.244.64.0/18"],
+				"overlay_hijack_subnet": ["10.244.0.0/18"],
+				"rp_filter": {
+					"enable": true,
+					"value": 0
+				},
+				"prevResult": {
+					"interfaces": [
+						{"name": "host"},
+						{"name": "container", "sandbox":"netns"}
+					],
+					"ips": [
+						{
+							"version": "4",
+							"address": "10.0.0.1/24",
+							"gateway": "10.0.0.1",
+							"interface": 0
+						},
+						{
+							"version": "6",
+							"address": "2001:db8:1::2/64",
+							"gateway": "2001:db8:1::1",
+							"interface": 0
+						}
+					]
+				}
+			}`)
+		conf, err := parseConfig(stdin)
+		Expect(err).NotTo(HaveOccurred())
+		It("success", func() {
+			patches := gomonkey.NewPatches()
+			defer patches.Reset()
+			patches.ApplyFuncReturn(utils.RouteAdd, nil, nil, nil)
+			patches.ApplyFuncReturn(addSubnetRoute, nil)
+			patches.ApplyFuncReturn(netlink.LinkByName, &netlink.Dummy{netlink.LinkAttrs{HardwareAddr: net.HardwareAddr("test")}}, nil)
+			err := setupRoutes(logger, testNetNs, 100, hInterface, cInterface, hostIPs, conIPs, conf, true, true)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
 	})
 
 })
