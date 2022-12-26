@@ -186,11 +186,15 @@ var _ = Describe("Router", func() {
 
 	Context("Test addHostIPRoute", func() {
 		It("underlay", func() {
-			err := addHostIPRoute(logger, testNetNs, 101, secondifName, true, true)
+			err := addHostIPRoute(logger, testNetNs, 101, secondifName, false, true, true)
 			Expect(err).NotTo(HaveOccurred())
 		})
 		It("overlay", func() {
-			err := addHostIPRoute(logger, testNetNs, 100, secondifName, true, true)
+			err := addHostIPRoute(logger, testNetNs, 100, secondifName, false, true, true)
+			Expect(err).NotTo(HaveOccurred())
+		})
+		It("when main cni is sroiv, don't need to add route", func() {
+			err := addHostIPRoute(logger, testNetNs, 100, secondifName, true, true, true)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -198,7 +202,7 @@ var _ = Describe("Router", func() {
 			patchees := gomonkey.NewPatches()
 			defer patchees.Reset()
 			patchees.ApplyFuncReturn(utils.GetHostIps, nil, errors.New("GetHostIps err"))
-			err := addHostIPRoute(logger, testNetNs, 101, secondifName, true, true)
+			err := addHostIPRoute(logger, testNetNs, 101, secondifName, false, true, true)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -206,7 +210,7 @@ var _ = Describe("Router", func() {
 			patchees := gomonkey.NewPatches()
 			defer patchees.Reset()
 			patchees.ApplyFuncReturn(utils.RouteAdd, nil, nil, errors.New("utils.RouteAdd err"))
-			err := addHostIPRoute(logger, testNetNs, 100, secondifName, true, true)
+			err := addHostIPRoute(logger, testNetNs, 100, secondifName, false, true, true)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -214,7 +218,7 @@ var _ = Describe("Router", func() {
 			patchees := gomonkey.NewPatches()
 			defer patchees.Reset()
 			patchees.ApplyFuncReturn(utils.RouteAdd, nil, nil, errors.New("RouteAdd err"))
-			err := addHostIPRoute(logger, testNetNs, 101, secondifName, true, true)
+			err := addHostIPRoute(logger, testNetNs, 101, secondifName, false, true, true)
 			Expect(err).To(HaveOccurred())
 		})
 	})
@@ -224,34 +228,32 @@ var _ = Describe("Router", func() {
 		It("success", func() {
 			patch := gomonkey.ApplyFuncReturn(utils.GetHostIps, []string{"10.96.0.13/16"}, nil)
 			defer patch.Reset()
-			err := addChainedIPRoute(logger, testNetNs, true, true, 100, secondifName, defaultInterfaceIPs)
+			err := addChainedIPRoute(logger, testNetNs, false, true, true, 100, overlayifName, defaultInterfaceIPs)
 			Expect(err).NotTo(HaveOccurred())
-		})
-
-		It("not addr", func() {
-			patches := gomonkey.NewPatches()
-			patches.ApplyFuncReturn(utils.GetHostIps, []string{"10.96.0.13/16"}, nil)
-			patches.ApplyFuncReturn(utils.AddrListByName, nil, errors.New("no addr"))
-			defer patches.Reset()
-			err := addChainedIPRoute(logger, testNetNs, true, true, 100, secondifName, defaultInterfaceIPs)
-			Expect(err).To(HaveOccurred())
-		})
-
-		It("route get failed", func() {
-			patches := gomonkey.NewPatches()
-			patches.ApplyFuncReturn(utils.GetHostIps, []string{"10.96.0.13/16"}, nil)
-			patches.ApplyFuncReturn(netlink.RouteGet, nil, errors.New("get route failed"))
-			defer patches.Reset()
-			err := addChainedIPRoute(logger, testNetNs, true, true, 100, secondifName, defaultInterfaceIPs)
-			Expect(err).To(HaveOccurred())
 		})
 
 		It("get host ip failed", func() {
 			patches := gomonkey.NewPatches()
 			patches.ApplyFuncReturn(utils.GetHostIps, []string{"10.96.0.13/16"}, errors.New("get host ip failed"))
 			defer patches.Reset()
-			err := addChainedIPRoute(logger, testNetNs, true, true, 100, secondifName, defaultInterfaceIPs)
+			err := addChainedIPRoute(logger, testNetNs, false, true, true, 100, secondifName, defaultInterfaceIPs)
 			Expect(err).To(HaveOccurred())
+		})
+
+		It("failed to get netlink", func() {
+			patches := gomonkey.NewPatches()
+			patches.ApplyFuncReturn(netlink.LinkByName, nil, errors.New("link no found"))
+			defer patches.Reset()
+			err := addChainedIPRoute(logger, testNetNs, false, true, true, 100, secondifName, defaultInterfaceIPs)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("skip call addChainedIPRoute", func() {
+			patches := gomonkey.NewPatches()
+			patches.ApplyFuncReturn(utils.GetHostIps, []string{"10.96.0.13/16"}, nil)
+			defer patches.Reset()
+			err := addChainedIPRoute(logger, testNetNs, true, true, true, 100, secondifName, defaultInterfaceIPs)
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("netlink.LinkByIndex failed", func() {
@@ -259,7 +261,7 @@ var _ = Describe("Router", func() {
 			defer patches.Reset()
 			patches.ApplyFuncReturn(utils.GetHostIps, []string{"10.96.0.13/16"}, nil)
 			patches.ApplyFuncReturn(netlink.LinkByIndex, nil, errors.New("netlink.LinkByIndex err"))
-			err := addChainedIPRoute(logger, testNetNs, true, true, 100, secondifName, defaultInterfaceIPs)
+			err := addChainedIPRoute(logger, testNetNs, false, true, true, 100, secondifName, defaultInterfaceIPs)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -268,7 +270,7 @@ var _ = Describe("Router", func() {
 			defer patches.Reset()
 			patches.ApplyFuncReturn(utils.GetHostIps, []string{"10.96.0.13/16"}, nil)
 			patches.ApplyFuncReturn(net.ParseCIDR, nil, nil, errors.New("parseCIDR err"))
-			err := addChainedIPRoute(logger, testNetNs, true, true, 100, secondifName, defaultInterfaceIPs)
+			err := addChainedIPRoute(logger, testNetNs, false, true, true, 100, secondifName, defaultInterfaceIPs)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -280,7 +282,7 @@ var _ = Describe("Router", func() {
 				{Values: gomonkey.Params{nil, nil, nil}},
 				{Values: gomonkey.Params{nil, nil, errors.New("parseCIDR err")}},
 			})
-			err := addChainedIPRoute(logger, testNetNs, true, true, 100, secondifName, defaultInterfaceIPs)
+			err := addChainedIPRoute(logger, testNetNs, false, true, true, 100, secondifName, defaultInterfaceIPs)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -289,7 +291,7 @@ var _ = Describe("Router", func() {
 			defer patches.Reset()
 			patches.ApplyFuncReturn(utils.GetHostIps, []string{"10.96.0.13/16"}, nil)
 			patches.ApplyFuncReturn(netlink.RuleAdd, errors.New("netlink.RuleAdd err"))
-			err := addChainedIPRoute(logger, testNetNs, true, true, 100, secondifName, defaultInterfaceIPs)
+			err := addChainedIPRoute(logger, testNetNs, false, true, true, 100, secondifName, defaultInterfaceIPs)
 			Expect(err).To(HaveOccurred())
 		})
 	})
