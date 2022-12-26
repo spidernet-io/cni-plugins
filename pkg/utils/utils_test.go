@@ -952,7 +952,11 @@ var _ = Describe("Utils", func() {
 	})
 	Context("test AddStaticNeighTable", func() {
 		It("success", func() {
-			err := AddStaticNeighTable(logger, testNetNs, true, true, conVethName, defaultInterfaceIPs)
+			err := AddStaticNeighTable(logger, testNetNs, false, true, true, conVethName, defaultInterfaceIPs)
+			Expect(err).NotTo(HaveOccurred())
+		})
+		It("skip", func() {
+			err := AddStaticNeighTable(logger, testNetNs, true, true, true, conVethName, defaultInterfaceIPs)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -960,7 +964,7 @@ var _ = Describe("Utils", func() {
 			patches := gomonkey.NewPatches()
 			defer patches.Reset()
 			patches.ApplyFuncReturn(GetHostIps, nil, errors.New("get host err"))
-			err := AddStaticNeighTable(logger, testNetNs, true, true, conVethName, defaultInterfaceIPs)
+			err := AddStaticNeighTable(logger, testNetNs, false, true, true, conVethName, defaultInterfaceIPs)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -968,7 +972,7 @@ var _ = Describe("Utils", func() {
 			patches := gomonkey.NewPatches()
 			defer patches.Reset()
 			patches.ApplyFuncReturn(netlink.LinkByName, nil, errors.New("linkByName err"))
-			err := AddStaticNeighTable(logger, testNetNs, true, true, conVethName, defaultInterfaceIPs)
+			err := AddStaticNeighTable(logger, testNetNs, false, true, true, conVethName, defaultInterfaceIPs)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -976,7 +980,7 @@ var _ = Describe("Utils", func() {
 			patches := gomonkey.NewPatches()
 			defer patches.Reset()
 			patches.ApplyFuncReturn(netlink.LinkByIndex, nil, errors.New("LinkByIndex err"))
-			err := AddStaticNeighTable(logger, testNetNs, true, true, conVethName, defaultInterfaceIPs)
+			err := AddStaticNeighTable(logger, testNetNs, false, true, true, conVethName, defaultInterfaceIPs)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -984,7 +988,7 @@ var _ = Describe("Utils", func() {
 			patches := gomonkey.NewPatches()
 			defer patches.Reset()
 			patches.ApplyFuncReturn(net.ParseCIDR, nil, nil, errors.New("LinkByIndex err"))
-			err := AddStaticNeighTable(logger, testNetNs, true, true, conVethName, defaultInterfaceIPs)
+			err := AddStaticNeighTable(logger, testNetNs, false, true, true, conVethName, defaultInterfaceIPs)
 			Expect(err).To(HaveOccurred())
 		})
 	})

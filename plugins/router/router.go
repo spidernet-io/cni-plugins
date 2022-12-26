@@ -36,6 +36,7 @@ type PluginConf struct {
 	// RpFilter
 	RPFilter   *ty.RPFilter   `json:"rp_filter,omitempty"`
 	Skipped    bool           `json:"skip_call,omitempty"`
+	Sriov      bool           `json:"sriov,omitempty"`
 	LogOptions *ty.LogOptions `json:"log_options,omitempty"`
 }
 
@@ -144,7 +145,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	// setup negiborhood to fix pod and host comminication issue
-	if err = utils.AddStaticNeighTable(logger, netns, enableIpv4, enableIpv6, conf.DefaultOverlayInterface, chainedInterfaceIps); err != nil {
+	if err = utils.AddStaticNeighTable(logger, netns, conf.Sriov, enableIpv4, enableIpv6, conf.DefaultOverlayInterface, chainedInterfaceIps); err != nil {
 		logger.Error(err.Error())
 		return err
 	}
@@ -157,14 +158,14 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	// ----------------- Add route table in host ns
-	if err = addChainedIPRoute(logger, netns, enableIpv4, enableIpv6, *conf.HostRuleTable, conf.DefaultOverlayInterface, chainedInterfaceIps); err != nil {
+	if err = addChainedIPRoute(logger, netns, conf.Sriov, enableIpv4, enableIpv6, *conf.HostRuleTable, conf.DefaultOverlayInterface, chainedInterfaceIps); err != nil {
 		logger.Error(err.Error())
 		return err
 	}
 
 	// -----------------  Add route table in pod ns
 	// add route in pod: hostIP via DefaultOverlayInterface
-	if err = addHostIPRoute(logger, netns, ruleTable, conf.DefaultOverlayInterface, enableIpv4, enableIpv6); err != nil {
+	if err = addHostIPRoute(logger, netns, ruleTable, conf.DefaultOverlayInterface, conf.Sriov, enableIpv4, enableIpv6); err != nil {
 		logger.Error("failed to add host ip route in container", zap.Error(err))
 		return fmt.Errorf("failed to add route: %v", err)
 	}
@@ -302,7 +303,11 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 
 // addHostIPRoute add all routes to the node in pod netns, the nexthop is the ip of the host
 // only add to main!
-func addHostIPRoute(logger *zap.Logger, netns ns.NetNS, ruleTable int, defaultInterface string, enableIpv4 bool, enableIpv6 bool) error {
+func addHostIPRoute(logger *zap.Logger, netns ns.NetNS, ruleTable int, defaultInterface string, iSriov, enableIpv4 bool, enableIpv6 bool) error {
+	if iSriov {
+		logger.Info("Main-cni is sriov, don't need to set chained route")
+		return nil
+	}
 	var err error
 	hostIPs, err := utils.GetHostIps(logger, enableIpv4, enableIpv6)
 	if err != nil {
@@ -334,69 +339,43 @@ func addHostIPRoute(logger *zap.Logger, netns ns.NetNS, ruleTable int, defaultIn
 
 // addChainedIPRoute to solve macvlan master/slave interface can't communications directly, we add a route fix it.
 // something like: ip r add <macvlan_ip> dev <overlay_veth_device> on host
-func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, enableIpv4, enableIpv6 bool, hostRuleTable int, defaultOverlayInterface string, chainedIPs []string) error {
+func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, iSriov, enableIpv4, enableIpv6 bool, hostRuleTable int, defaultOverlayInterface string, chainedIPs []string) error {
+	if iSriov {
+		logger.Debug("main-cni is sriov, don't need set chained route")
+		return nil
+	}
 	// 1. get defaultOverlayInterface IP
 	logger.Debug("Add underlay interface route in host ",
 		zap.String("default overlay interface", defaultOverlayInterface),
 		zap.Strings("underlay interface ips", chainedIPs))
 	var err error
-	var defaultOverlayIP net.IP
+	// index of cali* or lxc* on host
+	parentIndex := -1
 	err = netNS.Do(func(_ ns.NetNS) error {
-		addrs, err := utils.AddrListByName(defaultOverlayInterface, netlink.FAMILY_ALL)
+		link, err := netlink.LinkByName(defaultOverlayInterface)
 		if err != nil {
 			logger.Error(err.Error())
 			return err
 		}
-		for _, addr := range addrs {
-			if addr.IP.IsMulticast() || addr.IP.IsLinkLocalUnicast() {
-				continue
-			}
-			if addr.IP.To4() != nil && enableIpv4 {
-				defaultOverlayIP = addr.IP
-				break
-			}
-			if addr.IP.To4() == nil && enableIpv6 {
-				defaultOverlayIP = addr.IP
-				break
-			}
-		}
+		parentIndex = link.Attrs().ParentIndex
 		return nil
 	})
 	if err != nil {
 		logger.Error(err.Error())
-		return fmt.Errorf("failed to get ipv4 ipaddress for default overlay interface(%s): %v", defaultOverlayInterface, err)
+		return fmt.Errorf("failed to get parentIndex of %s in pod: %v", defaultOverlayInterface, err)
 	}
 
-	if defaultOverlayIP == nil {
-		return fmt.Errorf("unexpect defaultOverlayIP is nil, Please ensure if defaultOverlayInterface in pod is exsit")
-	}
-
-	// get overlay veth device via 'ip r get <defaultOverlayIP4>' in host ns
-	routes, err := netlink.RouteGet(defaultOverlayIP)
-	if err != nil {
-		logger.Error(err.Error())
-		return fmt.Errorf("failed to ip route get %s: %v", defaultOverlayIP, err)
-	}
-
-	linkIndex := -1
-	// in fact, only one route matched
-	for _, route := range routes {
-		linkIndex = route.LinkIndex
-		logger.Debug("Found default overlay route", zap.String("Default Overlay IP", defaultOverlayIP.String()), zap.String("Route", route.String()))
-		break
-	}
-	if linkIndex < 0 {
-		logger.Debug("linkIndex of the default overlay no found, ignore add route")
-		return nil
+	if parentIndex < 0 {
+		return fmt.Errorf("parentIndex on found")
 	}
 
 	// debug: get overlay veth interface(cali* or lxc*)
-	link, err := netlink.LinkByIndex(linkIndex)
+	link, err := netlink.LinkByIndex(parentIndex)
 	if err != nil {
 		logger.Error(err.Error())
 		return fmt.Errorf("failed to found default overlay veth interface: %v", err)
 	}
-	logger.Debug("Get IPv4 address of default overlay interface", zap.String("default overlay interface ipv4 address", defaultOverlayIP.String()), zap.String("Overlay-Veth Name", link.Attrs().Name))
+	logger.Debug("found veth device of default-overlay cni on host", zap.String("Parent Device", link.Attrs().Name))
 
 	hostIPs, err := utils.GetHostIps(logger, true, true)
 	if err != nil {
@@ -439,7 +418,7 @@ func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, enableIpv4, enableIpv
 				}
 
 				if err = netlink.RouteAdd(&netlink.Route{
-					LinkIndex: linkIndex,
+					LinkIndex: parentIndex,
 					Dst:       dst,
 					Scope:     netlink.SCOPE_LINK,
 					Table:     hostRuleTable,
@@ -447,7 +426,7 @@ func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, enableIpv4, enableIpv
 					logger.Error(err.Error())
 					return fmt.Errorf("failed to add route for underlay interface: %v", err)
 				}
-				logger.Debug("Succeed to add default overlay route on host", zap.Int("LinkIndex", linkIndex), zap.String("Dst", dst.String()))
+				logger.Debug("Succeed to add default overlay route on host", zap.Int("LinkIndex", parentIndex), zap.String("Dst", dst.String()))
 				break
 			}
 		}

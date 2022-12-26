@@ -686,7 +686,12 @@ func RuleDel(netNS ns.NetNS, logger *zap.Logger, ruleTable int, ips []string) er
 }
 
 // AddStaticNeighTable fix the problem of communication failure between pods and hosts by adding neigh table on pod and host
-func AddStaticNeighTable(logger *zap.Logger, netns ns.NetNS, enableIpv4, enableIpv6 bool, defaultOverlayInterface string, chainedInterfaceIps []string) error {
+func AddStaticNeighTable(logger *zap.Logger, netns ns.NetNS, iSriov, enableIpv4, enableIpv6 bool, defaultOverlayInterface string, chainedInterfaceIps []string) error {
+	if iSriov {
+		logger.Info("Main-cni is sriov, don't need set chained route")
+		return nil
+	}
+
 	parentIndex := -1
 	defaultOverlayMac := ""
 	hostIPs, err := GetHostIps(logger, enableIpv4, enableIpv6)
