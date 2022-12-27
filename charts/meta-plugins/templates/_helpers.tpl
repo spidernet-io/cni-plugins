@@ -65,12 +65,13 @@ Create the name of the service account to use
 return the meta-plugins image
 */}}
 {{- define "meta-plugins.image" -}}
-{{- $repository := .Values.image.repository -}}
+{{- $registry := .Values.image.registry -}}
 {{- if .Values.imageRepositoryOverride }}
     {{- printf "%s" .Values.imageRepositoryOverride -}}
 {{- else -}}
-    {{- printf "%s" $repository -}}
+    {{- printf "%s" $registry -}}
 {{- end -}}
+{{- printf "/%s" .Values.image.repository }}
 {{- if .Values.image.tag }}
     {{- printf ":%s" .Values.image.tag -}}
 {{- else -}}
