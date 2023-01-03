@@ -102,6 +102,8 @@ done
 
 kubectl apply -f  ${PROJECT_ROOT_PATH}/.tmp/config/calico.yaml --kubeconfig ${E2E_KUBECONFIG}
 
+sleep 3
+
 kubectl wait --for=condition=ready -l k8s-app=calico-node --timeout=${INSTALL_TIME_OUT} pod -n kube-system --kubeconfig ${E2E_KUBECONFIG}
 kubectl get po -n kube-system --kubeconfig ${E2E_KUBECONFIG}
 
