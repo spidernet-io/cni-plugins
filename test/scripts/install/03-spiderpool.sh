@@ -92,7 +92,7 @@ helm install spiderpool daocloud/spiderpool --wait -n kube-system --kubeconfig $
 kubectl wait --for=condition=ready -l app.kubernetes.io/name=spiderpool --timeout=${INSTALL_TIME_OUT} pod -n kube-system \
 --kubeconfig ${E2E_KUBECONFIG}
 
-
+sleep 10
 
 case ${IP_FAMILY} in
   ipv4)
