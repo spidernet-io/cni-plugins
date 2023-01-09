@@ -22,8 +22,8 @@ CNI_PLUGINS_VERSION=v1.1.1
 
 # proxy
 RUN_ON_LOCAL=false
-META_PLUGINS_CI_REPO=ghcr.m.daocloud.io/spidernet-io/cni-plugins/meta-plugins
-
+META_PLUGINS_CI_REGISTRY=ghcr.m.daocloud.io
+META_PLUGINS_CI_REPOSITORY=spidernet-io/cni-plugins/meta-plugins
 # Spiderpool
 SPIDERPOOL_VERSION=0.3.2
 

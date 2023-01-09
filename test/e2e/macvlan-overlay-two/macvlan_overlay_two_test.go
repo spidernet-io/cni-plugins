@@ -30,7 +30,7 @@ var _ = Describe("MacvlanOverlayTwo", Label("overlay", "two-interface"), func() 
 		targetAgent.TestNodePort = true
 		targetAgent.TestIPv4 = &common.IPV4
 		// TODO https://github.com/projectcalico/calico/issues/6877
-		targetAgent.TestIPv6 = &testIPv6
+		targetAgent.TestIPv6 = &common.IPV6
 
 		target.TargetAgent = targetAgent
 		task.Spec.Target = target
