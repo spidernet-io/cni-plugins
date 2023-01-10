@@ -88,38 +88,75 @@ jobs:
       push: false
     secrets: inherit
 
-  call_e2e_dual:
+  call_e2e_dual_calico:
     needs: [get_ref,call_build_e2e_image]
     if: ${{ needs.get_ref.outputs.run_e2e == 'true' }}
     uses: ./.github/workflows/e2e-init.yaml
     with:
       ip_family: dual
+      default_cni: k8s-pod-network
       push: false
       ref: ${{ needs.get_ref.outputs.ref }}
     secrets: inherit
 
-  call_e2e_ipv4:
+  call_e2e_ipv4_calico:
     needs: [get_ref,call_build_e2e_image]
     if: ${{ needs.get_ref.outputs.run_e2e == 'true' }}
     uses: ./.github/workflows/e2e-init.yaml
     with:
       ip_family: ipv4
+      default_cni: k8s-pod-network
       push: false
       ref: ${{ needs.get_ref.outputs.ref }}
     secrets: inherit
 
-  call_e2e_ipv6:
+  call_e2e_ipv6_calico:
     needs: [get_ref,call_build_e2e_image]
     if: ${{ needs.get_ref.outputs.run_e2e == 'true' }}
     uses: ./.github/workflows/e2e-init.yaml
     with:
       ip_family: ipv6
+      default_cni: k8s-pod-network
+      push: false
+      ref: ${{ needs.get_ref.outputs.ref }}
+    secrets: inherit
+
+
+  call_e2e_dual_cilium:
+    needs: [get_ref,call_build_e2e_image]
+    if: ${{ needs.get_ref.outputs.run_e2e == 'true' }}
+    uses: ./.github/workflows/e2e-init.yaml
+    with:
+      ip_family: dual
+      default_cni: cilium
+      push: false
+      ref: ${{ needs.get_ref.outputs.ref }}
+    secrets: inherit
+
+  call_e2e_ipv4_cilium:
+    needs: [get_ref,call_build_e2e_image]
+    if: ${{ needs.get_ref.outputs.run_e2e == 'true' }}
+    uses: ./.github/workflows/e2e-init.yaml
+    with:
+      ip_family: ipv4
+      default_cni: cilium
+      push: false
+      ref: ${{ needs.get_ref.outputs.ref }}
+    secrets: inherit
+
+  call_e2e_ipv6_cilium:
+    needs: [get_ref,call_build_e2e_image]
+    if: ${{ needs.get_ref.outputs.run_e2e == 'true' }}
+    uses: ./.github/workflows/e2e-init.yaml
+    with:
+      ip_family: ipv6
+      default_cni: cilium
       push: false
       ref: ${{ needs.get_ref.outputs.ref }}
     secrets: inherit
 
   create_e2e_issue:
-    needs: [call_e2e_dual,call_e2e_ipv4,call_e2e_ipv6]
+    needs: [call_e2e_dual_calico,call_e2e_ipv4_calico,call_e2e_ipv6_calico,call_e2e_dual_cilium,call_e2e_ipv4_cilium,call_e2e_ipv6_cilium]
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' && always() && !cancelled() && contains(needs.*.result, 'failure')
     steps:

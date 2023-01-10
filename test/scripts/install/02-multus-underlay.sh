@@ -15,7 +15,7 @@ PROJECT_ROOT_PATH=$( cd ${CURRENT_DIR_PATH}/../.. && pwd )
 #[ -n ${INSTALLED} ] && echo "Warning!! multus-underlay has been deployed, skip install multus-underlay" && exit 0
 
 # Multus config
-MULTUS_UNDERLAY_VERSION=${MULTUS_UNDERLAY_VERSION:-0.1.4}
+MULTUS_UNDERLAY_VERSION=${MULTUS_UNDERLAY_VERSION:-0.2.1}
 MACVLAN_MASTER=${MACVLAN_MASTER:-eth0}
 MACVLAN_TYPE=${MACVLAN_TYPE:-macvlan-overlay}
 
@@ -55,13 +55,19 @@ case ${IP_FAMILY} in
 esac
 
 if [ ${RUN_ON_LOCAL} == false ]; then
-  MULTUS_HELM_OPTIONS+=" --set multus.image.repository=ghcr.io/k8snetworkplumbingwg/multus-cni \
-  --set sriov.images.sriovCni.repository=ghcr.io/k8snetworkplumbingwg/sriov-cni \
-  --set sriov.images.sriovDevicePlugin.repository=ghcr.io/k8snetworkplumbingwg/sriov-network-device-plugin "
+  MULTUS_HELM_OPTIONS+=" --set multus.image.registry=ghcr.io \
+  --set sriov.images.sriovCni.registry=ghcr.io \
+  --set sriov.images.sriovDevicePlugin.registry=ghcr.io "
 fi
 
-if [ -n ${META_PLUGINS_CI_REPO} ] ;then
-  MULTUS_HELM_OPTIONS+=" --set meta-plugins.image.repository=${META_PLUGINS_CI_REPO} "
+if [ -n ${META_PLUGINS_CI_REGISTRY} ] ;then
+
+  MULTUS_HELM_OPTIONS+=" --set meta-plugins.image.registry=${META_PLUGINS_CI_REGISTRY} "
+fi
+
+if [ -n ${META_PLUGINS_CI_REPOSITORY} ] ;then
+
+  MULTUS_HELM_OPTIONS+=" --set meta-plugins.image.repository=${META_PLUGINS_CI_REPOSITORY} "
 fi
 
 if [ -n ${META_PLUGINS_CI_TAG} ] ;then
