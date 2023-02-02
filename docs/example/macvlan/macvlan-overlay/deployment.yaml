@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: macvlan-overlay-deploy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: macvlan-overlay-deploy
+  template:
+    metadata:
+      annotations:
+        k8s.v1.cni.cncf.io/networks: kube-system/macvlan-overlay
+      labels:
+        app: macvlan-overlay-deploy
+    spec:
+      containers:
+        - name: macvlan-overlay-deploy
+          image: busybox
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "trap : TERM INT; sleep infinity & wait"]

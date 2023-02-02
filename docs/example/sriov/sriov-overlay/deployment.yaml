@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sriov-overlay-deploy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: sriov-overlay-deploy
+  template:
+    metadata:
+      annotations:
+        v1.multus-cni.io/default-network: kube-system/sriov-overlay
+      labels:
+        app: sriov-overlay-deploy
+    spec:
+      containers:
+        - name: sriov-overlay-deploy
+          image: busybox
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "trap : TERM INT; sleep infinity & wait"]
