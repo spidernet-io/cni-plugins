@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: macvlan-standalone-deploy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: macvlan-standalone-deploy
+  template:
+    metadata:
+      annotations:
+        v1.multus-cni.io/default-network: kube-system/macvlan-standalone
+      labels:
+        app: macvlan-standalone-deploy
+    spec:
+      containers:
+        - name: macvlan-standalone-deploy
+          image: busybox
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "trap : TERM INT; sleep infinity & wait"]

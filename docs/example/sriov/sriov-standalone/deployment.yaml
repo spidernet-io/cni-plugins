@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sriov-standalone-deploy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: sriov-standalone-deploy
+  template:
+    metadata:
+      annotations:
+        v1.multus-cni.io/default-network: kube-system/sriov-standalone
+      labels:
+        app: sriov-standalone-deploy
+    spec:
+      containers:
+        - name: sriov-standalone-deploy
+          image: busybox
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "trap : TERM INT; sleep infinity & wait"]
