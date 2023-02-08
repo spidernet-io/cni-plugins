@@ -399,12 +399,7 @@ func MigrateRoute(logger *zap.Logger, netns ns.NetNS, defaultInterface, chainedI
 	// move overlay default route to table <ruleTable>
 	if enableIpv4 {
 		err := netns.Do(func(_ ns.NetNS) error {
-			e := moveRouteTable(logger, defaultInterface, ruleTable, netlink.FAMILY_V4)
-			if e != nil {
-				return e
-			}
-			e = moveRouteTable(logger, chainedInterface, ruleTable, netlink.FAMILY_V4)
-			return e
+			return moveRouteTable(logger, defaultInterface, ruleTable, netlink.FAMILY_V4)
 		})
 		if err != nil {
 			logger.Error(err.Error())
@@ -413,12 +408,7 @@ func MigrateRoute(logger *zap.Logger, netns ns.NetNS, defaultInterface, chainedI
 	}
 	if enableIpv6 {
 		err := netns.Do(func(_ ns.NetNS) error {
-			e := moveRouteTable(logger, defaultInterface, ruleTable, netlink.FAMILY_V6)
-			if e != nil {
-				return e
-			}
-			e = moveRouteTable(logger, chainedInterface, ruleTable, netlink.FAMILY_V6)
-			return e
+			return moveRouteTable(logger, defaultInterface, ruleTable, netlink.FAMILY_V6)
 		})
 		if err != nil {
 			logger.Error(err.Error())

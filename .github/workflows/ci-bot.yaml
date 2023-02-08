@@ -79,7 +79,7 @@ jobs:
           ISSUE_KIND: issue
           TYPE: created
           GREETING: |-
-            Hi @${{ github.event.issue.user.login }}, Thanks for opening an issue! Please use '/<kind>'(for example: /bug) to label this issue.
+            Hi @${{ github.event.issue.user.login }}, Thanks for opening an issue! Please use '/kind <type>'(for example: /kind bug) to label this issue.
 
   pr_opened:
     name: PR Opened
