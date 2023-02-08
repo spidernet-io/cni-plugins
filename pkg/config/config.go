@@ -5,6 +5,7 @@ import (
 	ty "github.com/spidernet-io/cni-plugins/pkg/types"
 	"k8s.io/utils/pointer"
 	"net"
+	"regexp"
 	"strings"
 )
 
@@ -82,4 +83,19 @@ func validateRoutes(routes []string) ([]string, error) {
 		}
 	}
 	return result, nil
+}
+
+func ValidateOverwriteMacAddress(prefix string) error {
+	if prefix == "" {
+		return nil
+	}
+	// prefix format like: 00:00、0a:1b
+	matchRegexp, err := regexp.Compile("^" + "(" + "[a-fA-F0-9]{2}[:-][a-fA-F0-9]{2}" + ")" + "$")
+	if err != nil {
+		return err
+	}
+	if !matchRegexp.MatchString(prefix) {
+		return fmt.Errorf("mac_prefix format should be match regex: [a-fA-F0-9]{2}[:][a-fA-F0-9]{2}, like '0a:1b'")
+	}
+	return nil
 }

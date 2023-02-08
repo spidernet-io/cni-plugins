@@ -57,7 +57,8 @@ spec:
                 "log_options": {
                   "log_level": "debug",
                   "log_file": "/var/log/meta-plugins/router.log"
-                }
+                },
+                "mac_prefix": "0a:0b"
             }
         ]
     }
@@ -73,3 +74,4 @@ spec:
 - `skip_call`: 是否跳过调用此插件，默认为false。
 - `log_options`: 日志配置。
 - `rp_filter`: 设置主机 rp_filter 参数, value 取值范围为 `0,1,2`
+- `mac_prefix`: 表示是否固定 Mac 地址的统一前缀, 为 4 个 16进制数, 配置格式为: "0a:1b", 需要满足 Mac 地址要求。如果`mac_prefix`为空, 表示不启用该功能(默认)。

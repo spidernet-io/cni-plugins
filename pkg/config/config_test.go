@@ -131,4 +131,18 @@ var _ = Describe("config", func() {
 			Expect(got).To(Equal(want))
 		})
 	})
+	Context("Test ValidateOverwriteMacAddress", func() {
+		It("mac_options is empty", func() {
+			err := ValidateOverwriteMacAddress("")
+			Expect(err).To(BeNil())
+		})
+		It("prefix is invalid return err", func() {
+			err := ValidateOverwriteMacAddress("wrong mac")
+			Expect(err.Error()).To(Equal("mac_prefix format should be match regex: [a-fA-F0-9]{2}[:][a-fA-F0-9]{2}, like '0a:1b'"))
+		})
+		It("enable and prefix is valid", func() {
+			err := ValidateOverwriteMacAddress("0a:1b")
+			Expect(err).To(BeNil())
+		})
+	})
 })
