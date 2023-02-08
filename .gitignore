@@ -29,3 +29,4 @@ gopath/
 .idea
 ./tmp/*
 /release-*
+.cr-release-packages

@@ -53,13 +53,13 @@ if [ ${IP_FAMILY} == "ipv4" ]; then
     docker exec ${containerID} ip addr add 172.100.0.1/16 dev ${DEFAULT_INTERFACE}.${VLANID1}
     docker exec ${containerID} ip addr add 172.200.0.1/16 dev ${DEFAULT_INTERFACE}.${VLANID2}
 elif [ ${IP_FAMILY} == "ipv6" ]; then
-    docker exec ${containerID}  sysctl -w net.ipv6.conf.${DEFAULT_INTERFACE}/${VLANID1}.disable_ipv6=0
-    docker exec ${containerID}  sysctl -w net.ipv6.conf.${DEFAULT_INTERFACE}/${VLANID2}.disable_ipv6=0
+    docker exec ${containerID}  sysctl -w net.ipv6.conf.all.disable_ipv6=0
+    docker exec ${containerID}  sysctl -w net.ipv6.conf.all.forwarding=1
     docker exec ${containerID} ip addr add fd00:172:100::1/64 dev ${DEFAULT_INTERFACE}.${VLANID1}
     docker exec ${containerID} ip addr add fd00:172:200::1/64 dev ${DEFAULT_INTERFACE}.${VLANID2}
 elif [ ${IP_FAMILY} == "dual" ]; then
-    docker exec ${containerID}  sysctl -w net.ipv6.conf.${DEFAULT_INTERFACE}/${VLANID1}.disable_ipv6=0
-    docker exec ${containerID}  sysctl -w net.ipv6.conf.${DEFAULT_INTERFACE}/${VLANID2}.disable_ipv6=0
+    docker exec ${containerID}  sysctl -w net.ipv6.conf.all.disable_ipv6=0
+    docker exec ${containerID}  sysctl -w net.ipv6.conf.all.forwarding=1
     docker exec ${containerID} ip addr add 172.100.0.1/16 dev ${DEFAULT_INTERFACE}.${VLANID1}
     docker exec ${containerID} ip addr add 172.200.0.1/16 dev ${DEFAULT_INTERFACE}.${VLANID2}
     docker exec ${containerID} ip addr add fd00:172:100::1/64 dev ${DEFAULT_INTERFACE}.${VLANID1}
