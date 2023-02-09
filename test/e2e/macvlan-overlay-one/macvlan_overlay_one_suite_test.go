@@ -60,7 +60,13 @@ var _ = BeforeSuite(func() {
 	Expect(multusInstance).NotTo(BeNil())
 
 	annotations[common.MultusAddonAnnotation_Key] = fmt.Sprintf("%s/%s", common.MultusNs, common.MacvlanOverlayVlan100Name)
-	annotations[common.SpiderPoolIPPoolAnnotationKey] = `{"interface": "net1", "ipv4": ["vlan100-v4"], "ipv6": ["vlan100-v6"]}`
+	if common.IPV4 && common.IPV6 {
+		annotations[common.SpiderPoolIPPoolAnnotationKey] = `{"interface": "net1", "ipv4": ["vlan100-v4"], "ipv6": ["vlan100-v6"]}`
+	} else if common.IPV4 && !common.IPV6 {
+		annotations[common.SpiderPoolIPPoolAnnotationKey] = `{"interface": "net1", "ipv4": ["vlan100-v4"]}`
+	} else {
+		annotations[common.SpiderPoolIPPoolAnnotationKey] = `{"interface": "net1", "ipv6": ["vlan100-v6"]}`
+	}
 
 	GinkgoWriter.Printf("update spiderdoctoragent annotation: %v/%v annotation: %v \n", common.SpiderDoctorAgentNs, common.SpiderDoctorAgentDSName, annotations)
 	spiderDoctorAgent, err = frame.GetDaemonSet(common.SpiderDoctorAgentDSName, common.SpiderDoctorAgentNs)

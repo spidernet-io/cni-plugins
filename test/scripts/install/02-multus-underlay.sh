@@ -15,7 +15,7 @@ PROJECT_ROOT_PATH=$( cd ${CURRENT_DIR_PATH}/../.. && pwd )
 #[ -n ${INSTALLED} ] && echo "Warning!! multus-underlay has been deployed, skip install multus-underlay" && exit 0
 
 # Multus config
-MULTUS_UNDERLAY_VERSION=${MULTUS_UNDERLAY_VERSION:-0.1.4}
+MULTUS_UNDERLAY_VERSION=${MULTUS_UNDERLAY_VERSION:-0.2.1}
 MACVLAN_MASTER=${MACVLAN_MASTER:-eth0}
 MACVLAN_TYPE=${MACVLAN_TYPE:-macvlan-overlay}
 
@@ -55,13 +55,19 @@ case ${IP_FAMILY} in
 esac
 
 if [ ${RUN_ON_LOCAL} == false ]; then
-  MULTUS_HELM_OPTIONS+=" --set multus.image.repository=ghcr.io/k8snetworkplumbingwg/multus-cni \
-  --set sriov.images.sriovCni.repository=ghcr.io/k8snetworkplumbingwg/sriov-cni \
-  --set sriov.images.sriovDevicePlugin.repository=ghcr.io/k8snetworkplumbingwg/sriov-network-device-plugin "
+  MULTUS_HELM_OPTIONS+=" --set multus.image.registry=ghcr.io \
+  --set sriov.images.sriovCni.registry=ghcr.io \
+  --set sriov.images.sriovDevicePlugin.registry=ghcr.io "
 fi
 
-if [ -n ${META_PLUGINS_CI_REPO} ] ;then
-  MULTUS_HELM_OPTIONS+=" --set meta-plugins.image.repository=${META_PLUGINS_CI_REPO} "
+if [ -n ${META_PLUGINS_CI_REGISTRY} ] ;then
+
+  MULTUS_HELM_OPTIONS+=" --set meta-plugins.image.registry=${META_PLUGINS_CI_REGISTRY} "
+fi
+
+if [ -n ${META_PLUGINS_CI_REPOSITORY} ] ;then
+
+  MULTUS_HELM_OPTIONS+=" --set meta-plugins.image.repository=${META_PLUGINS_CI_REPOSITORY} "
 fi
 
 if [ -n ${META_PLUGINS_CI_TAG} ] ;then
@@ -99,6 +105,8 @@ helm install multus-underlay daocloud/multus-underlay -n kube-system  --kubeconf
 kubectl wait --for=condition=ready -l app.kubernetes.io/instance=multus-underlay --timeout=${INSTALL_TIME_OUT} pod -n kube-system --kubeconfig ${E2E_KUBECONFIG}
 
 # create extra multus cr to test
+
+if [ "${DEFAULT_CNI}" == "k8s-pod-network" ] ; then
 cat <<EOF | kubectl --kubeconfig ${E2E_KUBECONFIG} apply -f -
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
@@ -135,7 +143,7 @@ spec:
                 "migrate_route": -1,
                 "rp_filter": {
                     "set_host": true,
-                    "value": 2
+                    "value": 0
                 },
                 "overlay_interface": "eth0",
                 "skip_call": false,
@@ -179,7 +187,7 @@ spec:
                 "migrate_route": -1,
                 "rp_filter": {
                     "set_host": true,
-                    "value": 2
+                    "value": 0
                 },
                 "overlay_interface": "eth0",
                 "skip_call": false,
@@ -188,5 +196,96 @@ spec:
         ]
     }
 EOF
+fi
+
+if [ "${DEFAULT_CNI}" == "cilium" ] ; then
+cat <<EOF | kubectl --kubeconfig ${E2E_KUBECONFIG} apply -f -
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  annotations:
+    v1.multus-underlay-cni.io/coexist-types: '["macvlan-standalone"]'
+    v1.multus-underlay-cni.io/default-cni: "true"
+    v1.multus-underlay-cni.io/instance-type: macvlan_standalone
+    v1.multus-underlay-cni.io/underlay-cni: "true"
+    v1.multus-underlay-cni.io/vlanId: "${MACVLAN_VLANID}"
+  labels:
+    v1.multus-underlay-cni.io/instance-status: enable
+  name: macvlan-standalone-vlan${MACVLAN_VLANID}
+  namespace: kube-system
+spec:
+  config: |-
+    {
+        "cniVersion": "0.3.1",
+        "name": "macvlan-overlay",
+        "plugins": [
+            {
+                "type": "macvlan",
+                "master": "eth0.${MACVLAN_VLANID}",
+                "mode": "bridge",
+                "ipam": {
+                    "type": "spiderpool",
+                    "log_level": "DEBUG"
+                }
+            },{
+                "type": "veth",
+                "service_hijack_subnet": ${SERVICE_HIJACK_SUBNET},
+                "overlay_hijack_subnet": ${OVERLAY_HIJACK_SUBNET},
+                "additional_hijack_subnet": [],
+                "migrate_route": -1,
+                "rp_filter": {
+                    "set_host": true,
+                    "value": 0
+                },
+                "overlay_interface": "eth0",
+                "skip_call": false
+            }
+        ]
+    }
+---
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  annotations:
+    v1.multus-underlay-cni.io/coexist-types: '["macvlan-overlay"]'
+    v1.multus-underlay-cni.io/default-cni: "false"
+    v1.multus-underlay-cni.io/instance-type: macvlan_overlay
+    v1.multus-underlay-cni.io/underlay-cni: "true"
+    v1.multus-underlay-cni.io/vlanId: "${MACVLAN_VLANID}"
+  labels:
+    v1.multus-underlay-cni.io/instance-status: enable
+  name: macvlan-overlay-vlan${MACVLAN_VLANID}
+  namespace: kube-system
+spec:
+  config: |-
+    {
+        "cniVersion": "0.3.1",
+        "name": "macvlan-overlay",
+        "plugins": [
+            {
+                "type": "macvlan",
+                "master": "eth0.${MACVLAN_VLANID}",
+                "mode": "bridge",
+                "ipam": {
+                    "type": "spiderpool",
+                    "log_level": "DEBUG"
+                }
+            },{
+                "type": "router",
+                "service_hijack_subnet": ${SERVICE_HIJACK_SUBNET},
+                "overlay_hijack_subnet": ${OVERLAY_HIJACK_SUBNET},
+                "additional_hijack_subnet": [],
+                "migrate_route": -1,
+                "rp_filter": {
+                    "set_host": true,
+                    "value": 0
+                },
+                "overlay_interface": "eth0",
+                "skip_call": false
+            }
+        ]
+    }
+EOF
+fi
 
 echo -e "\033[35m Succeed to install Multus-underlay \033[0m"

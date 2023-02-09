@@ -10,6 +10,9 @@ on:
       ip_family:
         required: true
         type: string
+      default_cni:
+        required: true
+        type: string
       ref:
         required: false
         type: string
@@ -71,9 +74,10 @@ jobs:
         id: install
         run: |
           make -C test install IP_FAMILY=${{ inputs.ip_family }}  \
-             META_PLUGINS_CI_REPO=ghcr.io/${{ github.repository }}/meta-plugins-ci \
+             META_PLUGINS_CI_REGISTRY=ghcr.io \
+             META_PLUGINS_CI_REPOSITORY=${{ github.repository }}/meta-plugins-ci \
              META_PLUGINS_CI_TAG=${{ inputs.ref }} \
-             DEFAULT_CNI=k8s-pod-network
+             DEFAULT_CNI=${{ inputs.default_cni }}
 
       - name: Setting vlan interface and create remote's client container
         id: vlan
@@ -94,7 +98,7 @@ jobs:
           shell: bash
           command: |
             RESULT=0
-            make -C test e2e IP_FAMILY=${{ inputs.ip_family }} || RESULT=$?
+            make -C test e2e IP_FAMILY=${{ inputs.ip_family }} DEFAULT_CNI=${{ inputs.default_cni }} || RESULT=$?
             if ((RESULT==0)) ; then
                 exit 0
             else

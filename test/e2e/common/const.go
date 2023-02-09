@@ -39,8 +39,9 @@ var (
 	ENV_VLAN_GATEWAY_CONTAINER = "VLAN_GATEWAY_CONTAINER"
 )
 var (
-	IPV4 bool
-	IPV6 bool
+	IPV4       = true
+	IPV6       = true
+	TestMultus = true
 )
 
 var (
@@ -52,5 +53,6 @@ var (
 func init() {
 	IPV4 = os.Getenv("E2E_IPV4_ENABLED") == "true"
 	IPV6 = os.Getenv("E2E_IPV6_ENABLED") == "true"
-
+	// https://github.com/spidernet-io/cni-plugins/issues/143
+	TestMultus = os.Getenv("DEFAULT_CNI") != "cilium"
 }

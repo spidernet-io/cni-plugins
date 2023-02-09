@@ -26,11 +26,11 @@ var _ = Describe("MacvlanOverlayOne", Label("overlay", "one-nic"), func() {
 		targetAgent.TestIngress = false
 		targetAgent.TestEndpoint = true
 		targetAgent.TestClusterIp = true
-		targetAgent.TestMultusInterface = true
+		targetAgent.TestMultusInterface = common.TestMultus
 		targetAgent.TestNodePort = true
 		targetAgent.TestIPv4 = &common.IPV4
 		// TODO https://github.com/projectcalico/calico/issues/6877
-		targetAgent.TestIPv6 = &testIPv6
+		targetAgent.TestIPv6 = &common.IPV6
 
 		target.TargetAgent = targetAgent
 		task.Spec.Target = target
