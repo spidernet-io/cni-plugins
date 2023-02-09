@@ -38,6 +38,7 @@ type PluginConf struct {
 	Skipped      bool             `json:"skip_call,omitempty"`
 	MigrateRoute *ty.MigrateRoute `json:"migrate_route,omitempty"`
 	LogOptions   *ty.LogOptions   `json:"log_options,omitempty"`
+	MacPrefix    string           `json:"mac_prefix,omitempty"`
 }
 
 func init() {
@@ -147,6 +148,16 @@ func cmdAdd(args *skel.CmdArgs) error {
 		logger.Info("Start call veth as the addon plugin", zap.Any("config", conf))
 	} else {
 		logger.Info("Start call veth as first plugin", zap.Any("config", conf))
+	}
+
+	// update mac address
+	if conf.MacPrefix != "" {
+		newMac, err := utils.OverwriteMacAddress(logger, netns, conf.MacPrefix, chainedInterface)
+		if err != nil {
+			return err
+		}
+		prevResult.Interfaces[0].Mac = newMac
+		logger.Info("Succeeded to update mac address", zap.String("interface", chainedInterface), zap.String("new mac", newMac))
 	}
 
 	// 1. setup veth pair
@@ -264,6 +275,11 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	if conf.LogOptions.LogFilePath == "" {
 		conf.LogOptions.LogFilePath = constant.VethLogDefaultFilePath
 	}
+
+	if err = config.ValidateOverwriteMacAddress(conf.MacPrefix); err != nil {
+		return nil, err
+	}
+
 	return &conf, nil
 }
 

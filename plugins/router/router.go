@@ -38,6 +38,7 @@ type PluginConf struct {
 	Skipped    bool           `json:"skip_call,omitempty"`
 	Sriov      bool           `json:"sriov,omitempty"`
 	LogOptions *ty.LogOptions `json:"log_options,omitempty"`
+	MacPrefix  string         `json:"mac_prefix,omitempty"`
 }
 
 var binName = filepath.Base(os.Args[0])
@@ -76,7 +77,9 @@ func cmdAdd(args *skel.CmdArgs) error {
 		zap.String("PodNamespace", string(k8sArgs.K8S_POD_NAMESPACE)),
 		zap.String("IfName", args.IfName))
 
+	logger.Info("stdin", zap.String("stdin", string(args.StdinData)))
 	logger.Debug("Succeed to parse cni config", zap.Any("Config", *conf))
+
 	// skip plugin
 	if conf.Skipped {
 		logger.Info("Ignore this plugin call, Return directly ")
@@ -144,7 +147,28 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("failed to get the number of rule table for interface %s", preInterfaceName)
 	}
 
-	// setup negiborhood to fix pod and host comminication issue
+	// update mac address
+	if conf.MacPrefix != "" {
+		newmac, err := utils.OverwriteMacAddress(logger, netns, conf.MacPrefix, preInterfaceName)
+		if err != nil {
+			logger.Error(err.Error())
+			return err
+		}
+		prevResult.Interfaces[0].Mac = newmac
+		logger.Info("Succeed to overwrite mac address for underlay cni", zap.String("interface", preInterfaceName), zap.String("newmac", newmac))
+		if ruleTable == constant.OverlayRouteTable {
+			// change calico mac address
+			// NOTICE: only change calico works, can't change cilium or failed to communication
+			newmacailco, err := utils.OverwriteMacAddress(logger, netns, conf.MacPrefix, constant.DefaultInterfaceName)
+			if err != nil {
+				logger.Error(err.Error())
+				return err
+			}
+			logger.Info("Succeed to overwrite mac address for overlay cni", zap.String("interface", constant.DefaultInterfaceName), zap.String("newmac", newmacailco))
+		}
+	}
+
+	// setup neighborhood to fix pod and host communication issue
 	if err = utils.AddStaticNeighTable(logger, netns, conf.Sriov, enableIpv4, enableIpv6, conf.DefaultOverlayInterface, chainedInterfaceIps); err != nil {
 		logger.Error(err.Error())
 		return err
@@ -240,7 +264,6 @@ func cmdDel(args *skel.CmdArgs) error {
 	chainedInterfaceIps, err := utils.GetChainedInterfaceIps(netns, args.IfName, true, true)
 	if err != nil {
 		logger.Warn("Pod No IPs, Skip call CmdDel", zap.Error(err))
-		return nil
 	}
 	logger.Debug("Get ChainedInterface IPs", zap.String("interface", args.IfName), zap.Strings("IPs", chainedInterfaceIps))
 	if err = utils.RuleDel(netns, logger, *conf.HostRuleTable, chainedInterfaceIps); err != nil {
@@ -297,6 +320,10 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	// value must be 0/1/2
 	// If not, giving default value: RPFilter_Loose(2) to it
 	conf.RPFilter = config.ValidateRPFilterConfig(conf.RPFilter)
+
+	if err = config.ValidateOverwriteMacAddress(conf.MacPrefix); err != nil {
+		return nil, err
+	}
 
 	return &conf, nil
 }

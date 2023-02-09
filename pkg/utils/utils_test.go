@@ -13,6 +13,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"net"
+	"net/netip"
 	"os"
 	"regexp"
 )
@@ -1039,6 +1040,47 @@ var _ = Describe("Utils", func() {
 			})
 			err := setRPFilter(logger, v)
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Context("test convertIp2Mac", func() {
+		regex, err := regexp.Compile("^" + "[a-fA-F0-9]{2}" + "(" + ":[a-fA-F0-9]{2}" + ")" + "{3}" + "$")
+		Expect(err).To(BeNil())
+
+		It("test ipv4", func() {
+			addr, err := netip.ParseAddr("192.168.20.1")
+			Expect(err).To(BeNil())
+
+			macSufficx, err := inetAton(addr)
+			Expect(err).To(BeNil())
+
+			matched := regex.MatchString(macSufficx)
+			Expect(matched).To(BeTrue())
+		})
+
+		It("test ipv6", func() {
+			addr, err := netip.ParseAddr("fd00:110:120::1")
+			Expect(err).To(BeNil())
+
+			macSufficx, err := inetAton(addr)
+			Expect(err).To(BeNil())
+
+			matched := regex.MatchString(macSufficx)
+			Expect(matched).To(BeTrue())
+		})
+
+		It("invalid ip", func() {
+			_, err := inetAton(netip.Addr{})
+			Expect(err.Error()).To(Equal("invalid ip address"))
+		})
+	})
+
+	Context("Test OverwriteMacAddress", func() {
+
+		It("a right config and pass", func() {
+			newmac, err := OverwriteMacAddress(logger, testNetNs, "0a:1b", conVethName)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(newmac).NotTo(BeEmpty(), newmac)
 		})
 	})
 

@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"bytes"
+	"encoding/hex"
 	"fmt"
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
@@ -11,7 +13,9 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 	"k8s.io/utils/pointer"
+	"math/big"
 	"net"
+	"net/netip"
 	"os"
 	"reflect"
 	"regexp"
@@ -808,4 +812,77 @@ func parseMac(s string) net.HardwareAddr {
 		panic(err)
 	}
 	return hardwareAddr
+}
+
+// OverwriteMacAddress overwrite mac-address
+func OverwriteMacAddress(logger *zap.Logger, netns ns.NetNS, macPrefix, iface string) (string, error) {
+	// which nic need to overwrite?
+	ips, err := GetChainedInterfaceIps(netns, iface, true, true)
+	if err != nil {
+		logger.Error("failed to get ips from given interface inside pod", zap.String("interface", iface), zap.Error(err))
+		return "", err
+	}
+
+	// in fact, we only focus on first ip in ips
+	nAddr, err := netip.ParsePrefix(ips[0])
+	if err != nil {
+		logger.Error("failed to parse ip to addr", zap.Error(err))
+		return "", err
+	}
+
+	suffix, err := inetAton(nAddr.Addr())
+	if err != nil {
+		logger.Error("failed to get suffix of mac address", zap.Error(err))
+		return "", err
+	}
+
+	// newmac = xx:xx + xx:xx:xx:xx
+	newMac := macPrefix + ":" + suffix
+	err = netns.Do(func(netNS ns.NetNS) error {
+		link, err := netlink.LinkByName(iface)
+		if err != nil {
+			logger.Error(err.Error())
+			return err
+		}
+		return netlink.LinkSetHardwareAddr(link, parseMac(newMac))
+	})
+
+	if err != nil {
+		logger.Error("failed to overwrite mac address", zap.String("newMac", newMac), zap.Error(err))
+		return "", err
+	}
+	return newMac, nil
+}
+
+// inetAton converts an IP Address (IPv4 or IPv6) netip.addr object to a hexadecimal representation
+func inetAton(ip netip.Addr) (string, error) {
+	if ip.AsSlice() == nil {
+		return "", fmt.Errorf("invalid ip address")
+	}
+
+	ipInt := big.NewInt(0)
+	// 32 bit -> 4 B
+	hexCode := make([]byte, hex.EncodedLen(ip.BitLen()))
+	ipBytes := ip.AsSlice()
+	ipInt.SetBytes(ipBytes[:])
+	hex.Encode(hexCode, ipInt.Bytes())
+
+	if ip.Is6() {
+		// for ipv6: 128 bit = 32 hex
+		// take the last 8 hex as the mac address
+		return convertHex2Mac(hexCode[24:]), nil
+	}
+
+	return convertHex2Mac(hexCode), nil
+}
+
+// convertHex2Mac convert hexcode to 8bit mac
+func convertHex2Mac(hexCode []byte) string {
+	// convert ip(hex) to "xx:xx:xx:xx"
+	// group by 2bit
+	regexSpilt, err := regexp.Compile(".{2}")
+	if err != nil {
+		panic(err)
+	}
+	return string(bytes.Join(regexSpilt.FindAll(hexCode, 4), []byte(":")))
 }

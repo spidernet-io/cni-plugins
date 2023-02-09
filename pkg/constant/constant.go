@@ -11,6 +11,8 @@ var DefaultInterfacesToExclude = []string{
 }
 
 var OverlayRouteTable = 100
+var DefaultInterfaceName = "eth0"
+var DefaultMacPrefix = "80:80"
 
 var ErrRouteFileExist string = "file exists"
 

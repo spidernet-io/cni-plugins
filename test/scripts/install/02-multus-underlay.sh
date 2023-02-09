@@ -138,7 +138,8 @@ spec:
                     "value": 2
                 },
                 "overlay_interface": "eth0",
-                "skip_call": false
+                "skip_call": false,
+                "mac_prefix": "0a:0b"
             }
         ]
     }
@@ -181,7 +182,8 @@ spec:
                     "value": 2
                 },
                 "overlay_interface": "eth0",
-                "skip_call": false
+                "skip_call": false,
+                "mac_prefix": "0a:0b"
             }
         ]
     }
