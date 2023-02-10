@@ -55,6 +55,7 @@ install:
 	export META_PLUGINS_CI_TAG=${META_PLUGINS_CI_TAG} ; \
 	export SPIDERPOOL_VERSION=${SPIDERPOOL_VERSION} ; \
 	export SPIDERDOCTOR_VERSION=${SPIDERDOCTOR_VERSION} ; \
+	export SPIDERDOCTOR_REPORT_PATH=${SPIDERDOCTOR_REPORT_PATH} ; \
 	for script in `ls scripts/install/` ; do \
 	  echo "Running $${script}"  ; \
 	  chmod +x scripts/install/$${script} ; \

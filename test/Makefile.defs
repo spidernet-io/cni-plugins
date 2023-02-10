@@ -31,3 +31,4 @@ SPIDERPOOL_VERSION=0.3.2
 
 # spiderdoctor
 SPIDERDOCTOR_VERSION=0.3.0
+SPIDERDOCTOR_REPORT_PATH=/var/log/spiderdoctor/controller

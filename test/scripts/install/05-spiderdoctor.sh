@@ -6,22 +6,21 @@ SPIDERDOCTOR_VERSION=${SPIDERDOCTOR_VERSION:-0.2.1}
 
 [ -z ${INSTALL_TIME_OUT} ] && INSTALL_TIME_OUT=600s
 
-SPIDERDOCTOR_HELM_OPTIONS=" "
+SPIDERDOCTOR_HELM_OPTIONS=" --set feature.aggregateReport.enabled=true \
+                            --set feature.aggregateReport.controller.reportHostPath=${SPIDERDOCTOR_REPORT_PATH} \
+                            --set spiderdoctorController.nodeSelector.kubernetes\.io/hostname=${IP_FAMILY}-control-plane "
 case ${IP_FAMILY} in
   ipv4)
     SPIDERDOCTOR_HELM_OPTIONS+=" --set feature.enableIPv4=true \
-    --set feature.enableIPv6=false \
-    --set feature.aggregateReport.enabled=false"
+    --set feature.enableIPv6=false "
     ;;
   ipv6)
     SPIDERDOCTOR_HELM_OPTIONS+=" --set feature.enableIPv4=false \
-    --set feature.enableIPv6=true \
-    --set feature.aggregateReport.enabled=false"
+    --set feature.enableIPv6=true "
     ;;
   dual)
     SPIDERDOCTOR_HELM_OPTIONS+=" --set feature.enableIPv4=true \
-    --set feature.enableIPv6=true \
-    --set feature.aggregateReport.enabled=false"
+    --set feature.enableIPv6=true "
     ;;
   *)
     echo "the value of IP_FAMILY: ipv4 or ipv6 or dual"
