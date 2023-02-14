@@ -99,8 +99,26 @@ jobs:
           command: |
             RESULT=0
             make -C test e2e IP_FAMILY=${{ inputs.ip_family }} DEFAULT_CNI=${{ inputs.default_cni }} || RESULT=$?
+            docker cp ${{ inputs.ip_family }}-control-plane:/var/log/spiderdoctor/controller /tmp/
+            tar zcvf  /tmp/spiderdoctor-report-${{ inputs.ip_family }}-${{ inputs.default_cni }}.tar.gz -C /tmp controller
             if ((RESULT==0)) ; then
-                exit 0
+                echo "RUN_PASS=true" >> $GITHUB_ENV
             else
-                exit 1
+                echo "RUN_PASS=true" >> $GITHUB_ENV
             fi
+
+      - name: Upload E2E Result
+        id: upload
+        uses: actions/upload-artifact@v3.1.0
+        with:
+          name: spiderdoctor-report-${{ inputs.ip_family }}-${{ inputs.default_cni }}
+          path: /tmp/spiderdoctor-report-${{ inputs.ip_family }}-${{ inputs.default_cni }}.tar.gz
+          retention-days: 1
+
+      - name: Show e2e Result
+        run: |
+          if ${{ env.RUN_PASS == 'true' }} ;then
+              exit 0
+          else
+              exit 1
+          fi
