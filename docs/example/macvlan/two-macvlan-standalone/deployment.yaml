@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: two-macvlan-standalone
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: two-macvlan-standalone
+  template:
+    metadata:
+      annotations:
+        v1.multus-cni.io/default-network: kube-system/macvlan-standalone-vlan0
+        k8s.v1.cni.cncf.io/networks: kube-system/macvlan-standalone-vlan100
+        ipam.spidernet.io/ippools: |-
+          [{
+            "interface": "eth0",
+            "ipv4": ["vlan0-v4"]
+          },{
+            "interface": "net1",
+            "ipv4": ["vlan100-v4"]
+          }]
+      labels:
+        app: two-macvlan-standalone
+    spec:
+      containers:
+        - name: macvlan-standalone-deploy
+          image: busybox
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "trap : TERM INT; sleep infinity & wait"]

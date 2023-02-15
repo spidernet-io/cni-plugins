@@ -38,6 +38,10 @@ Here is a schematic of workflow:
 
 In addition, `veth` also sets some sysctl parameters, including setting `disable_ipv6` and `rp_filter`.
 
+When the cni call finishes, you will see there are only one NIC inside pod, Which is created by `macvlan or sriov`, and device `veth0` is created by `veth` plugin, As shown the following:
+
+![standalone](../pictures/standalone.png)
+
 Here are the CNI configuration notes:
 
 - `overlay_hijack_subnet`: The subnet of default overlya-cni(such calico or cilium), Including IPv4 and IPv6(optional).Input format like: 10.244.0.0/18.
@@ -54,9 +58,13 @@ Here are the CNI configuration notes:
 
 In some user cases, First NIC is assigned by default overlay-cni(calico or cilium), Users hopes second NIC are assigned by `macvlan` or `sriov` etc. `Router` plugin makes first NIC forwards east-west traffic of the cluster, second NIC forwards east-west traffic of the cluster.
 
-### How to works
+### How to work
 
-The `Router` plugin moves all routes from the previous NIC in the pod to table 200(By default) and keeps the routes from the new NIC in the main table.
+The router plugin controls the forwarding of packets from different NICs through policy route. In general, east-west traffic is forwarded from eth0 and north-south traffic is forwarded from eth1. The `Router` plugin moves all routes from the `eth0` in the pod to table 200(By default) and keeps the routes from the new NIC(eth1) in the main table. 
+
+When the cni call finishes, you will see there are two NICs inside pod, First one is created by `calico or cilium`, and second one is created by `macvlan or sriov`, As shown the following:
+
+![](../pictures/overlay.png)
 
 Here is a schematic of workflow:
 

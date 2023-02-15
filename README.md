@@ -13,9 +13,9 @@ Currently, the CNI-Meta-Plugins is under beta stage, not ready for production en
 ## Introduction
 The CNI-Meta-Plugin is a collection of cni plugins designed to solve various network communication problems in the case of multiple network interface in the pod. Currently, it includes two plugins, router and veth
 
-`veth`：Solve the communication problem when the default cni is macvlan or sriov by creating a veth pair. Refer to [Design](./docs/Design.md).
+`veth`：Solve the communication problem when the default cni is macvlan or sriov by creating a veth pair. Refer to [Design](docs/description/Design.md).
 
-`router`: Solve the communication problem when the default cni is calico or cilium and the macvlan or sriov is configured with multiple network interfaces, move the routing table without cni to a new routing table. Refer to [Design](./docs/Design.md).
+`router`: Solve the communication problem when the default cni is calico or cilium and the macvlan or sriov is configured with multiple network interfaces, move the routing table without cni to a new routing table. Refer to [Design](docs/description/Design.md).
 
 ## Features
 
