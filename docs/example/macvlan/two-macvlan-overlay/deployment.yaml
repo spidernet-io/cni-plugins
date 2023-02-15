@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: two-macvlan-overlay
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: two-macvlan-overlay
+  template:
+    metadata:
+      annotations:
+        k8s.v1.cni.cncf.io/networks: kube-system/macvlan-overlay-vlan0,kube-system/macvlan-overlay-vlan100
+        ipam.spidernet.io/ippools: |-
+          [{
+            "interface": "net1",
+            "ipv4": ["vlan0-v4"]
+          },{
+            "interface": "net2",
+            "ipv4": ["vlan100-v4"]
+          }]
+      labels:
+        app: two-macvlan-overlay
+    spec:
+      containers:
+        - name: macvlan-overlay-deploy
+          image: busybox
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "trap : TERM INT; sleep infinity & wait"]

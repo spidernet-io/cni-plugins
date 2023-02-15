@@ -23,6 +23,7 @@ More details about [CNI-META-PLUGINS charts parameters](https://github.com/spide
 
 
 ### binary
+
 If you don't want to use helm for installation, you can download the binary file directly.
 ```bash
 # You need to download and decompress at each node
@@ -33,7 +34,9 @@ tar xvfzp /root/spider-cni-plugins-linux-amd64-v0.2.1.tar -C /opt/cni/bin
 ## Uninstall
 
 Generally, you can uninstall CNI-META-PLUGINS release in this way:
+
 ### helm
+
 ```bash
 helm uninstall meta-plugins -n kube-system
 ```
