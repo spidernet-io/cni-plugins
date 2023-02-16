@@ -44,13 +44,14 @@ When the cni call finishes, you will see there are only one NIC inside pod, Whic
 
 Here are the CNI configuration notes:
 
-- `overlay_hijack_subnet`: The subnet of default overlya-cni(such calico or cilium), Including IPv4 and IPv6(optional).Input format like: 10.244.0.0/18.
+- `overlay_hijack_subnet`: The subnet of default overlya-cni(such calico or cilium), Including IPv4 and IPv6(optional).Input format like: ["10.244.0.0/18","10.244.128.0/64"].
 - `service_hijack_subnet`: The subnet of Service clusterIP, Including IPv4 and IPv6 (optional), input format like: 10.244.0.0/18. 
 - `additional_hijack_subnet`: additional customizable routes, Pod will forward this traffic through the veth device. input format like: 10.244.0.0/18.
 - `migrate_route`: List of available values: `-1,0,1`, Default value is `-1`. This indicates whether to move the route for that added NIC to the new table. `-1` means migrate according to NIC name order(eth0 < net1 < net2), `0` means don't migration, `1` means migrate. 
 - `skip_call`: Indicates whether to skip the call of this plugin, default is false.
 - `log_options`: Log configuration. By default, the log level is `Debug`, and the log_file path is `/var/log/meta-plugins/veth.log`.
 - `rp_filter`: Set the `rp_filter` parameter of the host, List of available value: `0,1,2`. Default value is `2`.
+- `mac_preifx`: It's the unified mac address prefix, Length is 4 hex digits. Input format like: "1a:2b". If it's be empty, it's means disable this feature.
 
 ## Router Plugin
 
@@ -96,10 +97,12 @@ In addition, `router` also sets some sysctl parameters, including setting `disab
 Here are the CNI configuration notes:
 
 - `overlay_hijack_subnet`: The subnet of default overlya-cni(such calico or cilium), Including IPv4 and IPv6(optional).Input format like: 10.244.0.0/18.
-- `service_hijack_subnet`: The subnet of Service clusterIP, Including IPv4 and IPv6 (optional), input format like: 10.244.0.0/18.
-- `additional_hijack_subnet`: additional customizable routes, Pod will forward this traffic through the veth device. input format like: 10.244.0.0/18.
+- `service_hijack_subnet`: The subnet of Service clusterIP, Including IPv4 and IPv6 (optional), input format like: ["172.96.0.0/18","2001:4860:fd00::/108"].
+- `additional_hijack_subnet`: additional customizable routes, Pod will forward this traffic through the veth device. input format like: ["172.20.0.0/18","2001:abcd:fd00::/108"].
 - `migrate_route`: List of available values: `-1,0,1`, Default value is `-1`. This indicates whether to move the route for that added NIC to the new table. `-1` means migrate according to NIC name order(eth0 < net1 < net2), `0` means don't migration, `1` means migrate.
 - `skip_call`: Indicates whether to skip the call of this plugin, default is false.
 - `log_options`: Log configuration. By default, the log level is `Debug`, and the log_file path is `/var/log/meta-plugins/veth.log`.
 - `rp_filter`: Set the `rp_filter` parameter of the host, List of available value: `0,1,2`. Default value is `2`.
 - `overlay_interface`: Default is `eth0`, Indicates the default overlay NIC name, The `router` plugin will follow the NIC name to determine whether to migrate the route to another route rule table.
+- `mac_preifx`: It's the unified mac address prefix, Length is 4 hex digits. Input format like: "1a:2b". If it's be empty, it's means disable this feature.
+

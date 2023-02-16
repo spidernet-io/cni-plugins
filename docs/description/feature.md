@@ -7,6 +7,7 @@ With `Multus`, You can create multiple NICs inside pod simply. But this may have
 Note: *You can invoke `veth` repeatedly, but not both `veth` and `router` plugins*
 
 `veth`: Keep the route of the first NIC(eth0) in the main table and move the routes of other NICs to the policy route.
+
 `router`: Keep the route of the latest NIC in the main table and move the routes of other NICs to the policy route.
 
 Examples refer to [two-macvlan-standalone](../example/macvlan/two-macvlan-standalone) and  [two-macvlan-overlay](../example/macvlan/two-macvlan-overlay)
