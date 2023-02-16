@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 )
 
 type PluginConf struct {
@@ -58,6 +59,8 @@ func main() {
 }
 
 func cmdAdd(args *skel.CmdArgs) error {
+	startTime := time.Now()
+
 	var logger *zap.Logger
 	conf, err := parseConfig(args.StdinData)
 	if err != nil {
@@ -227,8 +230,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return err
 	}
 
-	// TODO: for multiple macvlan interfaces, maybe need add "ip rule" for second interface
-	logger.Info("succeeded to call veth-plugin")
+	logger.Info("succeeded to call veth-plugin", zap.Int64("Time Cost", time.Since(startTime).Microseconds()))
 	return types.PrintResult(conf.PrevResult, conf.CNIVersion)
 }
 

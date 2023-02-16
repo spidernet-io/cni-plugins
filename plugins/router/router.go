@@ -21,6 +21,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 type PluginConf struct {
@@ -50,6 +51,8 @@ func main() {
 }
 
 func cmdAdd(args *skel.CmdArgs) error {
+	startTime := time.Now()
+
 	var logger *zap.Logger
 
 	conf, err := parseConfig(args.StdinData)
@@ -220,7 +223,8 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	logger.Info("Succeeded to set for chained interface for overlay interface",
-		zap.String("interface", preInterfaceName))
+		zap.String("interface", preInterfaceName), zap.Int64("Time Cost", time.Since(startTime).Microseconds()))
+
 	return types.PrintResult(conf.PrevResult, conf.CNIVersion)
 }
 
@@ -439,7 +443,7 @@ func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, iSriov, enableIpv4, e
 				rule.Table = hostRuleTable
 				rule.Family = family
 				rule.Dst = dst
-				if err = netlink.RuleAdd(rule); err != nil {
+				if err = netlink.RuleAdd(rule); err != nil && err.Error() != constant.ErrFileExists {
 					logger.Error("Netlink RuleAdd Failed", zap.String("Rule", rule.String()), zap.Error(err))
 					return fmt.Errorf("failed to add rule table for underlay interface: %v", err)
 				}
