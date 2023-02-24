@@ -223,6 +223,114 @@ kubectl exec [POD] [COMMAND] is DEPRECATED and will be removed in a future versi
        valid_lft forever preferred_lft forever
 ```
 
+For only one NIC is created by `calico`, You may only need to change to update its mac address and nothing else, You can refer to the following configuration:
+
+`veth`:
+
+```yaml
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+   name: macvlan-standalone
+   namespace: kube-system
+spec:
+  config: |-
+      {
+        "name": "calico",
+        "cniVersion":"0.3.1",
+        "plugins":[
+          {
+            "datastore_type": "kubernetes",
+            "nodename": "controller",
+            "type": "calico",
+            "log_level": "info",
+            "log_file_path": "/var/log/calico/cni/cni.log",
+            "ipam": {
+              "type": "calico-ipam",
+              "assign_ipv6": "true",
+              "ipv6_pools": ["fd85:ee78:d8a6:8607::1:0000/112"],
+              "ipv4_pools": ["10.233.64.0/18"],
+              "assign_ipv4": "true"
+            },
+            "policy": {
+              "type": "k8s"
+            },
+            "kubernetes": {
+              "kubeconfig": "/etc/cni/net.d/calico-kubeconfig"
+            }
+          },
+          {
+            "type":"portmap",
+            "capabilities": {
+              "portMappings": true
+            }
+          },
+          {
+            "type":"bandwidth",
+            "capabilities": {
+              "bandwidth": true
+            }
+          },
+            "type": "veth",
+            "mac_prefix": "0a:1b",
+            "only_op_mac": true
+        ]
+      }
+```
+
+Router: 
+
+```yaml
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+   name: macvlan-standalone
+   namespace: kube-system
+spec:
+  config: |-
+      {
+        "name": "calico",
+        "cniVersion":"0.3.1",
+        "plugins":[
+          {
+            "datastore_type": "kubernetes",
+            "nodename": "controller",
+            "type": "calico",
+            "log_level": "info",
+            "log_file_path": "/var/log/calico/cni/cni.log",
+            "ipam": {
+              "type": "calico-ipam",
+              "assign_ipv6": "true",
+              "ipv6_pools": ["fd85:ee78:d8a6:8607::1:0000/112"],
+              "ipv4_pools": ["10.233.64.0/18"],
+              "assign_ipv4": "true"
+            },
+            "policy": {
+              "type": "k8s"
+            },
+            "kubernetes": {
+              "kubeconfig": "/etc/cni/net.d/calico-kubeconfig"
+            }
+          },
+          {
+            "type":"portmap",
+            "capabilities": {
+              "portMappings": true
+            }
+          },
+          {
+            "type":"bandwidth",
+            "capabilities": {
+              "bandwidth": true
+            }
+          },
+            "type": "router",
+            "mac_prefix": "0a:1b",
+            "only_op_mac": true
+        ]
+      }
+```
+
 ### Custom log options
 
 `log_options` is used to config logger, as shown following:

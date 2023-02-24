@@ -817,6 +817,7 @@ func parseMac(s string) net.HardwareAddr {
 // OverwriteMacAddress overwrite mac-address
 func OverwriteMacAddress(logger *zap.Logger, netns ns.NetNS, macPrefix, iface string) (string, error) {
 	// which nic need to overwrite?
+	logger.Debug("Get OverwriteMacAddress parameters", zap.String("macPrefix", macPrefix), zap.String("iface", iface))
 	ips, err := GetChainedInterfaceIps(netns, iface, true, true)
 	if err != nil {
 		logger.Error("failed to get ips from given interface inside pod", zap.String("interface", iface), zap.Error(err))

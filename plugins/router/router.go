@@ -38,6 +38,7 @@ type PluginConf struct {
 	RPFilter   *ty.RPFilter   `json:"rp_filter,omitempty"`
 	Skipped    bool           `json:"skip_call,omitempty"`
 	Sriov      bool           `json:"sriov,omitempty"`
+	OnlyOpMac  bool           `json:"only_op_mac,omitempty"`
 	LogOptions *ty.LogOptions `json:"log_options,omitempty"`
 	MacPrefix  string         `json:"mac_prefix,omitempty"`
 }
@@ -100,13 +101,27 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("failed to convert prevResult: %v", err)
 	}
 
+	netns, err := ns.GetNS(args.Netns)
+	if err != nil {
+		logger.Error(err.Error())
+		return fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
+	}
+	defer netns.Close()
+
+	if len(conf.MacPrefix) != 0 {
+		newMac, err := utils.OverwriteMacAddress(logger, netns, conf.MacPrefix, args.IfName)
+		if err != nil {
+			return fmt.Errorf("failed to update mac address, maybe mac_prefix is invalid: %v", conf.MacPrefix)
+		}
+		logger.Info("Update mac address successfully", zap.String("interface", constant.DefaultInterfaceName), zap.String("new mac", newMac))
+		if conf.OnlyOpMac {
+			logger.Debug("only update mac address, exiting now...")
+			return types.PrintResult(conf.PrevResult, conf.CNIVersion)
+		}
+	}
+
 	enableIpv4 := false
 	enableIpv6 := false
-	if len(prevResult.IPs) == 0 {
-		err = fmt.Errorf(" got no container IPs")
-		logger.Error(err.Error())
-		return err
-	}
 	for _, v := range prevResult.IPs {
 		if v.Address.IP.To4() != nil {
 			enableIpv4 = true
@@ -130,14 +145,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	// Pass the prevResult through this plugin to the next one
 	// result := prevResult
-
-	netns, err := ns.GetNS(args.Netns)
-	if err != nil {
-		logger.Error(err.Error())
-		return fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
-	}
-	defer netns.Close()
-
 	chainedInterfaceIps, err := utils.GetChainedInterfaceIps(netns, preInterfaceName, enableIpv4, enableIpv6)
 	if err != nil {
 		logger.Error(err.Error())
@@ -148,27 +155,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 	if ruleTable < 0 {
 		logger.Error("failed to get the number of rule table for interface", zap.String("interface", preInterfaceName))
 		return fmt.Errorf("failed to get the number of rule table for interface %s", preInterfaceName)
-	}
-
-	// update mac address
-	if conf.MacPrefix != "" {
-		newmac, err := utils.OverwriteMacAddress(logger, netns, conf.MacPrefix, preInterfaceName)
-		if err != nil {
-			logger.Error(err.Error())
-			return err
-		}
-		prevResult.Interfaces[0].Mac = newmac
-		logger.Info("Succeed to overwrite mac address for underlay cni", zap.String("interface", preInterfaceName), zap.String("newmac", newmac))
-		if ruleTable == constant.OverlayRouteTable {
-			// change calico mac address
-			// NOTICE: only change calico works, can't change cilium or failed to communication
-			newmacailco, err := utils.OverwriteMacAddress(logger, netns, conf.MacPrefix, constant.DefaultInterfaceName)
-			if err != nil {
-				logger.Error(err.Error())
-				return err
-			}
-			logger.Info("Succeed to overwrite mac address for overlay cni", zap.String("interface", constant.DefaultInterfaceName), zap.String("newmac", newmacailco))
-		}
 	}
 
 	// setup neighborhood to fix pod and host communication issue
@@ -300,6 +286,18 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 		return nil, fmt.Errorf("[router] could not parse prevResult: %v", err)
 	}
 	// End previous result parsing
+	if err = config.ValidateOverwriteMacAddress(conf.MacPrefix); err != nil {
+		return nil, err
+	}
+
+	conf.LogOptions = logging.InitLogOptions(conf.LogOptions)
+	if conf.LogOptions.LogFilePath == "" {
+		conf.LogOptions.LogFilePath = constant.RouterLogDefaultFilePath
+	}
+
+	if conf.OnlyOpMac {
+		return &conf, nil
+	}
 
 	conf.ServiceHijackSubnet, conf.OverlayHijackSubnet, err = config.ValidateRoutes(conf.ServiceHijackSubnet, conf.OverlayHijackSubnet)
 	if err != nil {
@@ -307,11 +305,6 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	}
 
 	conf.MigrateRoute = config.ValidateMigrateRouteConfig(conf.MigrateRoute)
-
-	conf.LogOptions = logging.InitLogOptions(conf.LogOptions)
-	if conf.LogOptions.LogFilePath == "" {
-		conf.LogOptions.LogFilePath = constant.RouterLogDefaultFilePath
-	}
 
 	if conf.DefaultOverlayInterface == "" {
 		conf.DefaultOverlayInterface = "eth0"
@@ -324,10 +317,6 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	// value must be 0/1/2
 	// If not, giving default value: RPFilter_Loose(2) to it
 	conf.RPFilter = config.ValidateRPFilterConfig(conf.RPFilter)
-
-	if err = config.ValidateOverwriteMacAddress(conf.MacPrefix); err != nil {
-		return nil, err
-	}
 
 	return &conf, nil
 }
