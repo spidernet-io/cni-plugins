@@ -138,7 +138,7 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v4.2.0
         with:
-          title: "robot Update changelog-${{ .steps.save.outputs.latest_release }}.md to branch ${{ env.MERGE_BRANCH }} "
+          title: "robot Update changelog-${{ steps.save.outputs.release }}.md to branch ${{ env.MERGE_BRANCH }} "
           commit-message: "robot Update changelog-${latest_release}.md to branch ${{ env.MERGE_BRANCH }} "
           branch-suffix: timestamp
           branch: robot/update_chart
