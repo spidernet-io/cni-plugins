@@ -40,6 +40,7 @@ type PluginConf struct {
 	MigrateRoute *ty.MigrateRoute `json:"migrate_route,omitempty"`
 	LogOptions   *ty.LogOptions   `json:"log_options,omitempty"`
 	MacPrefix    string           `json:"mac_prefix,omitempty"`
+	OnlyOpMac    bool             `json:"only_op_mac,omitempty"`
 }
 
 func init() {
@@ -104,10 +105,25 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 	logger.Debug("Start call veth", zap.Any("config", conf))
 
-	if len(prevResult.IPs) == 0 {
-		err = fmt.Errorf(" got no container IPs")
+	netns, err := ns.GetNS(args.Netns)
+	if err != nil {
 		logger.Error(err.Error())
-		return err
+		return fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
+	}
+	defer netns.Close()
+
+	logger.Debug("Get prevResult", zap.Any("prevResult", prevResult))
+
+	if len(conf.MacPrefix) != 0 {
+		newMac, err := utils.OverwriteMacAddress(logger, netns, conf.MacPrefix, args.IfName)
+		if err != nil {
+			return fmt.Errorf("failed to update mac address, maybe mac_prefix is invalid: %v", conf.MacPrefix)
+		}
+		logger.Info("Update mac address successfully", zap.String("interface", constant.DefaultInterfaceName), zap.String("new mac", newMac))
+		if conf.OnlyOpMac {
+			logger.Debug("only update mac address, exiting now...")
+			return types.PrintResult(conf.PrevResult, conf.CNIVersion)
+		}
 	}
 
 	enableIpv4, enableIpv6 := false, false
@@ -134,13 +150,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 	// Pass the prevResult through this plugin to the next one
 	// result := prevResult
 
-	netns, err := ns.GetNS(args.Netns)
-	if err != nil {
-		logger.Error(err.Error())
-		return fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
-	}
-	defer netns.Close()
-
 	isfirstInterface, e := utils.CheckInterfaceMiss(netns, defaultConVeth)
 	if e != nil {
 		logger.Error("failed to check first veth interface", zap.Error(e))
@@ -151,16 +160,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 		logger.Info("Start call veth as the addon plugin", zap.Any("config", conf))
 	} else {
 		logger.Info("Start call veth as first plugin", zap.Any("config", conf))
-	}
-
-	// update mac address
-	if conf.MacPrefix != "" {
-		newMac, err := utils.OverwriteMacAddress(logger, netns, conf.MacPrefix, chainedInterface)
-		if err != nil {
-			return err
-		}
-		prevResult.Interfaces[0].Mac = newMac
-		logger.Info("Succeeded to update mac address", zap.String("interface", chainedInterface), zap.String("new mac", newMac))
 	}
 
 	// 1. setup veth pair
@@ -261,6 +260,18 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 		return nil, fmt.Errorf("[veth] could not parse prevResult: %v", err)
 	}
 	// End previous result parsing
+	if err = config.ValidateOverwriteMacAddress(conf.MacPrefix); err != nil {
+		return nil, err
+	}
+
+	conf.LogOptions = logging.InitLogOptions(conf.LogOptions)
+	if conf.LogOptions.LogFilePath == "" {
+		conf.LogOptions.LogFilePath = constant.VethLogDefaultFilePath
+	}
+
+	if conf.OnlyOpMac {
+		return &conf, nil
+	}
 
 	conf.ServiceHijackSubnet, conf.OverlayHijackSubnet, err = config.ValidateRoutes(conf.ServiceHijackSubnet, conf.OverlayHijackSubnet)
 	if err != nil {
@@ -272,15 +283,6 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	conf.RPFilter = config.ValidateRPFilterConfig(conf.RPFilter)
 
 	conf.MigrateRoute = config.ValidateMigrateRouteConfig(conf.MigrateRoute)
-
-	conf.LogOptions = logging.InitLogOptions(conf.LogOptions)
-	if conf.LogOptions.LogFilePath == "" {
-		conf.LogOptions.LogFilePath = constant.VethLogDefaultFilePath
-	}
-
-	if err = config.ValidateOverwriteMacAddress(conf.MacPrefix); err != nil {
-		return nil, err
-	}
 
 	return &conf, nil
 }

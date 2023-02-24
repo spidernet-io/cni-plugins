@@ -52,6 +52,7 @@ Here are the CNI configuration notes:
 - `log_options`: Log configuration. By default, the log level is `Debug`, and the log_file path is `/var/log/meta-plugins/veth.log`.
 - `rp_filter`: Set the `rp_filter` parameter of the host, List of available value: `0,1,2`. Default value is `2`.
 - `mac_preifx`: It's the unified mac address prefix, Length is 4 hex digits. Input format like: "1a:2b". If it's be empty, it's means disable this feature.
+- `only_op_mac`: If you only want to update the mac address of the NIC is created by Main CNI and nothing else, you should set it to 'true'. By default, which is false. Note: this only works when `mac_preifx` isn't empty.
 
 ## Router Plugin
 
@@ -105,4 +106,4 @@ Here are the CNI configuration notes:
 - `rp_filter`: Set the `rp_filter` parameter of the host, List of available value: `0,1,2`. Default value is `2`.
 - `overlay_interface`: Default is `eth0`, Indicates the default overlay NIC name, The `router` plugin will follow the NIC name to determine whether to migrate the route to another route rule table.
 - `mac_preifx`: It's the unified mac address prefix, Length is 4 hex digits. Input format like: "1a:2b". If it's be empty, it's means disable this feature.
-
+- `only_op_mac`: If you only want to update the mac address of the NIC is created by Main CNI and nothing else, you should set it to 'true'. By default, which is false. Note: this only works when `mac_preifx` isn't empty.
