@@ -26,7 +26,8 @@ MULTUS_HELM_OPTIONS=" --set multus.config.cni_conf.clusterNetwork=${DEFAULT_CNI}
 --set macvlan.name=macvlan-overlay-vlan0 \
 --set sriov.sriov_crd.vlanId=500 \
 --set meta-plugins.image.tag=latest \
---set sriov.manifests.enable=true
+--set sriov.manifests.enable=true \
+--wait
 "
 
 case ${IP_FAMILY} in
