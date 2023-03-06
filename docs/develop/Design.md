@@ -44,7 +44,7 @@ When the cni call finishes, you will see there are only one NIC inside pod, Whic
 
 Here are the CNI configuration notes:
 
-- `overlay_hijack_subnet`: The subnet of default overlya-cni(such calico or cilium), Including IPv4 and IPv6(optional).Input format like: ["10.244.0.0/18","10.244.128.0/64"].
+- `overlay_hijack_subnet`: The subnet of default overlay-cni(such calico or cilium), Including IPv4 and IPv6(optional).Input format like: ["10.244.0.0/18","10.244.128.0/64"].
 - `service_hijack_subnet`: The subnet of Service clusterIP, Including IPv4 and IPv6 (optional), input format like: 10.244.0.0/18. 
 - `additional_hijack_subnet`: additional customizable routes, Pod will forward this traffic through the veth device. input format like: 10.244.0.0/18.
 - `migrate_route`: List of available values: `-1,0,1`, Default value is `-1`. This indicates whether to move the route for that added NIC to the new table. `-1` means migrate according to NIC name order(eth0 < net1 < net2), `0` means don't migration, `1` means migrate. 
@@ -58,7 +58,7 @@ Here are the CNI configuration notes:
 
 ### Motivation
 
-In some user cases, First NIC is assigned by default overlay-cni(calico or cilium), Users hopes second NIC are assigned by `macvlan` or `sriov` etc. `Router` plugin makes first NIC forwards east-west traffic of the cluster, second NIC forwards east-west traffic of the cluster.
+In some user cases, First NIC is assigned by default overlay-cni(calico or cilium), Users hopes second NIC are assigned by `macvlan` or `sriov` etc. `Router` plugin makes first NIC forwards east-west traffic of the cluster, second NIC forwards north-south traffic of the cluster.
 
 ### How to work
 
