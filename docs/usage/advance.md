@@ -14,7 +14,7 @@ The docs introduce some advanced usages in overlay cni(calico) + underlay cni(ma
 
 ### calico + macvlan/sriov with one NIC
 
-- **With Vlan/Trunk**
+- **Macvlan/SR-Iov in different vlan tag**
 
 The network topology is shown below:
 
@@ -30,21 +30,21 @@ Note:
 > 
 > d. The NIC `ens224` has no configure ip address. and it with [SR-IOV](http://blog.scottlowe.org/2009/12/02/what-is-sr-iov) capabilities are managed through physical functions (PFs) and virtual functions (VFs).
 > 
-> e. Create vlan interface `ens224.110` and `ens224.120` with `ens224` on node, vlan tag is vlan 120 and vlan 130. They serve as the master interface for macvlan pod. Note: `ens224.110` and `ens224.120` do not need to configure ip address.
+> e. Create vlan interface `ens224.120` and `ens224.130` with `ens224` on node, vlan tag is vlan 120 and vlan 130. They serve as the master interface for macvlan pod. Note: `ens224.120` and `ens224.130` do not need to configure ip address.
 > 
 > f. The gateway of business pod are on the switch.
 
-- **With Vlan/No Trunk**
+- **Macvlan and SR-Iov in same vlan tag**
 
 The network topology is shown below:
 
-![Only-vlan-no-trunk](../pictures/only-vlan.png)
+![Only-vlan-no-trunk](../pictures/same-vlan.png)
 
 > a. `ens192` is link to switch's access interface, vlan tag is vlan 100. It is used as k8s cluster admin network, such as api-server and kubelet, etc.
 > 
-> b. `ens224` is link to switch's trunk interface, It is used as k8s cluster business network. vlan tag is vlan 200. and configured IPs is optional.
+> b. `ens224` is link to switch's access interface, It is used as k8s cluster business network. vlan tag is vlan 200. and configured IPs is optional.
 > 
-> c. `ens224` is sriov's PFs, and create vlan interface `ens224.120` with `ens224` on node,It serves as the master interface for macvlan pod. Note: Configured IPs for `ens224.120` is optional. If the IP is configured, it must belong to the vlan120 subnet.
+> c. `ens224` is sriov's PFs, and create vlan interface `ens224.120` with `ens224` on node, It serves as the master interface for macvlan pod. Note: Configured IPs for `ens224.120` is optional. If the IP is configured, it must belong to the vlan120 subnet.
 > 
 > d. All sriov pods and macvlan pods must be on the same subnet as vlan120("`10.200.0.0/16`"),And their gateways are both `10.200.0.1`.
 

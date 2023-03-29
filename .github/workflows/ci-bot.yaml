@@ -26,6 +26,7 @@ env:
     label-enhancement
     label-question
     label-kind/bug
+    label-kind
     label-kind/doc
     label-kind/feature
     label-kind/cleanup
