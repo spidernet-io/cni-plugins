@@ -13,6 +13,14 @@ const (
 	MigrateEnable
 )
 
+type State int
+
+const (
+	StateNoIPConflict State = iota
+	StateIPConflict
+	StateError
+)
+
 type RPFilter struct {
 	// setup host rp_filter
 	Enable *bool `json:"set_host,omitempty"`
@@ -42,4 +50,10 @@ type Route struct {
 	OverlaySubnet []string `json:"overlay_subnet,omitempty"`
 	ServiceSubnet []string `json:"service_subnet,omitempty"`
 	CustomSubnet  []string `json:"custom_subnet,omitempty"`
+}
+
+type IPConflict struct {
+	Enabled  bool   `json:"enabled,omitempty"`
+	Interval string `json:"interval,omitempty"`
+	Retry    int    `json:"retries,omitempty"`
 }

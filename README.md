@@ -95,6 +95,24 @@ Refer to [demo](./docs/usage/basic.md).
     ```
 
     `mac_prefix` an is the unified mac address prefix, Length is 4 hex digits. Input format like: "1a:2b".
+- Detect IPv4/IPv6 address conflicting
+
+The veth and router plugins support IPv4 and IPv6 addresses conflict detection using arp or ndp protocols for the pod's IP, and return an error if the IP is found to be already in use by another host on the LAN.
+You can enable this feature in the following way:
+
+```json
+             "log_options": {
+                  "log_level": "debug",
+                  "log_file": "/var/log/meta-plugins/router.log"
+             },
+             "ip_conflict": {
+                  "enabled": true,
+                  "interval": "1s",
+                  "retries": 5
+             },
+```
+
+more details refer to [Configuration](docs/usage/config.md)
 
 # License
 

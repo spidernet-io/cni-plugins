@@ -99,3 +99,20 @@ func ValidateOverwriteMacAddress(prefix string) error {
 	}
 	return nil
 }
+
+func ValidateIPConflict(config *ty.IPConflict) *ty.IPConflict {
+	if config == nil {
+		return nil
+	}
+	if config.Enabled {
+		if config.Interval == "" {
+			config.Interval = "1s"
+		}
+
+		if config.Retry <= 0 {
+			config.Retry = 3
+		}
+	}
+	return config
+
+}

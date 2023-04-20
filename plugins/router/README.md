@@ -58,6 +58,11 @@ spec:
                   "log_level": "debug",
                   "log_file": "/var/log/meta-plugins/router.log"
                 },
+                "ip_conflict": {
+                  "enabled": true,
+                  "interval": "1s",
+                  "retries": 5
+                },
                 "mac_prefix": "0a:0b"
             }
         ]
@@ -73,6 +78,7 @@ spec:
 - `host_rule_table`: 为解决 Macvlan 主接口与子接口不通问题，通过将主机去往子接口的路由写入到此table,实现两者可达。默认为 table 500。
 - `skip_call`: 是否跳过调用此插件，默认为false。
 - `log_options`: 日志配置。
+- `ip_conflict`: IP 冲突检测功能。`enabled` 表示是否启用; `interval` 表示发送 arp 探测包的间隔; `retries` 表示尝试发生 arp 探测包的次数。
 - `rp_filter`: 设置主机 rp_filter 参数, value 取值范围为 `0,1,2`
 - `mac_prefix`: 表示是否固定 Mac 地址的统一前缀, 为 4 个 16进制数, 配置格式为: "0a:1b", 需要满足 Mac 地址要求。如果`mac_prefix`为空, 表示不启用该功能(默认)。
 - `only_op_mac`: 表示调用此插件只为了固定 Pod 网卡的 Mac 地址,随即结束调用。 当且仅当 `mac_prefix` 字段不为空时生效, 默认不启用。
