@@ -1,6 +1,6 @@
 module github.com/spidernet-io/cni-plugins
 
-go 1.19
+go 1.20
 
 require (
 	github.com/agiledragon/gomonkey/v2 v2.9.0
