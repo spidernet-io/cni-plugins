@@ -4,6 +4,9 @@
 package constant
 
 import (
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 
 	"github.com/spidernet-io/spiderpool/pkg/types"
@@ -19,58 +22,74 @@ const (
 	DefaultIPAMUnixSocketPath = "/var/run/spidernet/spiderpool.sock"
 )
 
-// Log level character string
 const (
-	LogDebugLevelStr = "debug"
-	LogInfoLevelStr  = "info"
-	LogWarnLevelStr  = "warn"
-	LogErrorLevelStr = "error"
-	LogFatalLevelStr = "fatal"
-	LogPanicLevelStr = "panic"
+	KindPod         = "Pod"
+	KindDeployment  = "Deployment"
+	KindStatefulSet = "StatefulSet"
+	KindDaemonSet   = "DaemonSet"
+	KindUnknown     = "Unknown"
+	KindReplicaSet  = "ReplicaSet"
+	KindJob         = "Job"
+	KindCronJob     = "CronJob"
+)
+
+var K8sKinds = []string{KindPod, KindDeployment, KindReplicaSet, KindDaemonSet, KindStatefulSet, KindJob, KindCronJob}
+var K8sAPIVersions = []string{corev1.SchemeGroupVersion.String(), appsv1.SchemeGroupVersion.String(), batchv1.SchemeGroupVersion.String()}
+
+const (
+	PodRunning     types.PodStatus = "Running"
+	PodTerminating types.PodStatus = "Terminating"
+	PodSucceeded   types.PodStatus = "Succeeded"
+	PodFailed      types.PodStatus = "Failed"
+	PodEvicted     types.PodStatus = "Evicted"
+	PodDeleted     types.PodStatus = "Deleted"
+	PodUnknown     types.PodStatus = "Unknown"
 )
 
 const (
-	OwnerNone        string = "None"
-	OwnerDeployment  string = "Deployment"
-	OwnerStatefulSet string = "StatefulSet"
-	OwnerDaemonSet   string = "DaemonSet"
-	OwnerUnknown     string = "Unknown"
-	OwnerReplicaSet  string = "ReplicaSet"
-	OwnerJob         string = "Job"
-	OwnerCronJob     string = "CronJob"
-)
+	AnnotationPre = "ipam.spidernet.io"
 
-const (
-	PodRunning      types.PodStatus = "Running"
-	PodTerminating  types.PodStatus = "Terminating"
-	PodGraceTimeOut types.PodStatus = "GraceTimeOut"
-	PodSucceeded    types.PodStatus = "Succeeded"
-	PodFailed       types.PodStatus = "Failed"
-	PodEvicted      types.PodStatus = "Evicted"
-	PodDeleted      types.PodStatus = "Deleted"
-)
-
-const (
-	AnnotationPre       = "ipam.spidernet.io"
 	AnnoPodIPPool       = AnnotationPre + "/ippool"
 	AnnoPodIPPools      = AnnotationPre + "/ippools"
 	AnnoPodRoutes       = AnnotationPre + "/routes"
 	AnnoPodDNS          = AnnotationPre + "/dns"
-	AnnoPodStatus       = AnnotationPre + "/status"
-	AnnoNSDefautlV4Pool = AnnotationPre + "/defaultv4ippool"
-	AnnoNSDefautlV6Pool = AnnotationPre + "/defaultv6ippool"
+	AnnoNSDefautlV4Pool = AnnotationPre + "/default-ipv4-ippool"
+	AnnoNSDefautlV6Pool = AnnotationPre + "/default-ipv6-ippool"
+
+	// subnet manager annotation and labels
+	AnnoSpiderSubnet              = AnnotationPre + "/subnet"
+	AnnoSpiderSubnets             = AnnotationPre + "/subnets"
+	AnnoSpiderSubnetPoolIPNumber  = AnnotationPre + "/ippool-ip-number"
+	AnnoSpiderSubnetReclaimIPPool = AnnotationPre + "/ippool-reclaim"
+	AnnoSpiderSubnetPoolApp       = AnnotationPre + "/application"
+
+	LabelIPPoolOwnerSpiderSubnet   = AnnotationPre + "/owner-spider-subnet"
+	LabelIPPoolOwnerApplicationUID = AnnotationPre + "/owner-application-uid"
+	LabelIPPoolReclaimIPPool       = AnnoSpiderSubnetReclaimIPPool
+
+	LabelSubnetCIDR = AnnotationPre + "/subnet-cidr"
+	LabelIPPoolCIDR = AnnotationPre + "/ippool-cidr"
 )
 
 const (
-	SpiderpoolAgent        = "spiderpool-agent"
-	SpiderpoolController   = "spiderpool-controller"
-	SpiderpoolAPIGroup     = "spiderpool.spidernet.io"
-	SpiderFinalizer        = SpiderpoolAPIGroup
-	SpiderpoolAPIVersionV1 = "v1"
-	SpiderIPPoolKind       = "SpiderIPPool"
-	SpiderEndpointKind     = "SpiderEndpoint"
-	SpiderReservedIPKind   = "SpiderReservedIP"
-	SpiderSubnetKind       = "SpiderSubnet"
+	Spiderpool           = "spiderpool"
+	SpiderpoolAgent      = "spiderpool-agent"
+	SpiderpoolController = "spiderpool-controller"
+)
+
+const (
+	SpiderFinalizer      = SpiderpoolAPIGroup
+	SpiderpoolAPIGroup   = "spiderpool.spidernet.io"
+	SpiderpoolAPIVersion = "v2beta1"
+	KindSpiderSubnet     = "SpiderSubnet"
+	KindSpiderIPPool     = "SpiderIPPool"
+	KindSpiderEndpoint   = "SpiderEndpoint"
+	KindSpiderReservedIP = "SpiderReservedIP"
+)
+
+const (
+	UseCache    = true
+	IgnoreCache = false
 )
 
 const (
@@ -78,20 +97,15 @@ const (
 	QualifiedK8sObjNameFmt          = "[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*"
 )
 
-// subnet manager annotation and labels
 const (
-	AnnoSubnetManagerPrefix = SpiderpoolAPIGroup
-
-	AnnoSubnetManagerV4               = AnnoSubnetManagerPrefix + "/spider-subnet-v4"
-	AnnoSubnetManagerV6               = AnnoSubnetManagerPrefix + "/spider-subnet-v6"
-	AnnoSubnetManagerAssignIPNumber   = AnnoSubnetManagerPrefix + "/assign-ip-number"
-	AnnoSubnetManagerFlexibleIPNumber = AnnoSubnetManagerPrefix + "/flexible-ip-number"
-	AnnoSubnetManagerReclaimIPPool    = AnnoSubnetManagerPrefix + "/reclaim-ippool"
-
-	LabelIPPoolOwnerSpiderSubnet   = "owner-spider-subnet"
-	LabelIPPoolOwnerApplication    = "owner-application"
-	LabelIPPoolOwnerApplicationUID = "owner-application-uid"
-	LabelIPPoolVersion             = "ippool-version"
-	LabelIPPoolVersionV4           = "v4"
-	LabelIPPoolVersionV6           = "v6"
+	True  = "true"
+	False = "false"
 )
+
+const (
+	EventReasonScaleIPPool  = "ScaleIPPool"
+	EventReasonDeleteIPPool = "DeleteIPPool"
+	EventReasonResyncSubnet = "ResyncSubnet"
+)
+
+const ClusterDefaultInterfaceName = "eth0"

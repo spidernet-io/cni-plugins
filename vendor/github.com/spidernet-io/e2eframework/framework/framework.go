@@ -238,7 +238,7 @@ func (f *Framework) UpdateResource(obj client.Object, opts ...client.UpdateOptio
 	return f.KClient.Update(ctx5, obj, opts...)
 }
 
-func (f *Framework) UpdateResourceStatus(obj client.Object, opts ...client.UpdateOption) error {
+func (f *Framework) UpdateResourceStatus(obj client.Object, opts ...client.SubResourceUpdateOption) error {
 	ctx6, cancel6 := context.WithTimeout(context.Background(), f.Config.ApiOperateTimeout)
 	defer cancel6()
 	return f.KClient.Status().Update(ctx6, obj, opts...)

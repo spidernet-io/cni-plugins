@@ -16,6 +16,7 @@ import (
 	"github.com/spidernet-io/cni-plugins/pkg/config"
 	"github.com/spidernet-io/cni-plugins/pkg/constant"
 	"github.com/spidernet-io/cni-plugins/pkg/logging"
+	"github.com/spidernet-io/cni-plugins/pkg/networking"
 	ty "github.com/spidernet-io/cni-plugins/pkg/types"
 	"github.com/spidernet-io/cni-plugins/pkg/utils"
 	"github.com/vishvananda/netlink"
@@ -39,6 +40,7 @@ type PluginConf struct {
 	Skipped      bool             `json:"skip_call,omitempty"`
 	MigrateRoute *ty.MigrateRoute `json:"migrate_route,omitempty"`
 	LogOptions   *ty.LogOptions   `json:"log_options,omitempty"`
+	IPConflict   *ty.IPConflict   `json:"ip_conflict,omitempty"`
 	MacPrefix    string           `json:"mac_prefix,omitempty"`
 	OnlyOpMac    bool             `json:"only_op_mac,omitempty"`
 }
@@ -113,6 +115,15 @@ func cmdAdd(args *skel.CmdArgs) error {
 	defer netns.Close()
 
 	logger.Debug("Get prevResult", zap.Any("prevResult", prevResult))
+
+	// we do check if ip is conflict firstly
+	if conf.IPConflict != nil && conf.IPConflict.Enabled {
+		err = networking.DoIPConflictChecking(logger, netns, args.IfName, prevResult.IPs, conf.IPConflict)
+		if err != nil {
+			logger.Error(err.Error())
+			return err
+		}
+	}
 
 	if len(conf.MacPrefix) != 0 {
 		newMac, err := utils.OverwriteMacAddress(logger, netns, conf.MacPrefix, args.IfName)
@@ -262,6 +273,14 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	// End previous result parsing
 	if err = config.ValidateOverwriteMacAddress(conf.MacPrefix); err != nil {
 		return nil, err
+	}
+
+	if conf.IPConflict != nil {
+		conf.IPConflict = config.ValidateIPConflict(conf.IPConflict)
+		_, err = time.ParseDuration(conf.IPConflict.Interval)
+		if err != nil {
+			return nil, fmt.Errorf("invalid interval %s: %v, input like: 1s or 1m", conf.IPConflict.Interval, err)
+		}
 	}
 
 	conf.LogOptions = logging.InitLogOptions(conf.LogOptions)

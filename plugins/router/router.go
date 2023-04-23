@@ -12,6 +12,7 @@ import (
 	"github.com/spidernet-io/cni-plugins/pkg/config"
 	"github.com/spidernet-io/cni-plugins/pkg/constant"
 	"github.com/spidernet-io/cni-plugins/pkg/logging"
+	"github.com/spidernet-io/cni-plugins/pkg/networking"
 	ty "github.com/spidernet-io/cni-plugins/pkg/types"
 	"github.com/spidernet-io/cni-plugins/pkg/utils"
 	"github.com/vishvananda/netlink"
@@ -40,6 +41,7 @@ type PluginConf struct {
 	Sriov      bool           `json:"sriov,omitempty"`
 	OnlyOpMac  bool           `json:"only_op_mac,omitempty"`
 	LogOptions *ty.LogOptions `json:"log_options,omitempty"`
+	IPConflict *ty.IPConflict `json:"ip_conflict,omitempty"`
 	MacPrefix  string         `json:"mac_prefix,omitempty"`
 }
 
@@ -101,12 +103,34 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return fmt.Errorf("failed to convert prevResult: %v", err)
 	}
 
+	if len(prevResult.Interfaces) == 0 {
+		err = fmt.Errorf("failed to find interface from prevResult")
+		logger.Error(err.Error())
+		return err
+	}
+
+	preInterfaceName := prevResult.Interfaces[0].Name
+	if len(preInterfaceName) == 0 {
+		err = fmt.Errorf("failed to find interface name from prevResult")
+		logger.Error(err.Error())
+		return err
+	}
+
 	netns, err := ns.GetNS(args.Netns)
 	if err != nil {
 		logger.Error(err.Error())
 		return fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
 	}
 	defer netns.Close()
+
+	// we do check if ip is conflict firstly
+	if conf.IPConflict != nil && conf.IPConflict.Enabled {
+		err = networking.DoIPConflictChecking(logger, netns, args.IfName, prevResult.IPs, conf.IPConflict)
+		if err != nil {
+			logger.Error(err.Error())
+			return err
+		}
+	}
 
 	if len(conf.MacPrefix) != 0 {
 		newMac, err := utils.OverwriteMacAddress(logger, netns, conf.MacPrefix, args.IfName)
@@ -128,19 +152,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 		} else {
 			enableIpv6 = true
 		}
-	}
-
-	if len(prevResult.Interfaces) == 0 {
-		err = fmt.Errorf("failed to find interface from prevResult")
-		logger.Error(err.Error())
-		return err
-	}
-
-	preInterfaceName := prevResult.Interfaces[0].Name
-	if len(preInterfaceName) == 0 {
-		err = fmt.Errorf("failed to find interface name from prevResult")
-		logger.Error(err.Error())
-		return err
 	}
 
 	// Pass the prevResult through this plugin to the next one
@@ -302,6 +313,14 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 	conf.ServiceHijackSubnet, conf.OverlayHijackSubnet, err = config.ValidateRoutes(conf.ServiceHijackSubnet, conf.OverlayHijackSubnet)
 	if err != nil {
 		return nil, err
+	}
+
+	if conf.IPConflict != nil {
+		conf.IPConflict = config.ValidateIPConflict(conf.IPConflict)
+		_, err = time.ParseDuration(conf.IPConflict.Interval)
+		if err != nil {
+			return nil, fmt.Errorf("invalid interval %s: %v, input like: 1s,1m", conf.IPConflict.Interval, err)
+		}
 	}
 
 	conf.MigrateRoute = config.ValidateMigrateRouteConfig(conf.MigrateRoute)

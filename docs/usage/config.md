@@ -351,3 +351,25 @@ spec:
 ```
 
 You can config `log_level(default to debug)` and `log_file(default to/var/log/meta-plugins/router.log)`.
+
+### Detect ip conflicting
+
+The veth and router plugins support IPv4 and IPv6 addresses conflict detection using arp or ndp protocols for the pod's IP, and return an error if the IP is found to be already in use by another host on the LAN.
+You can enable this feature in the following way:
+
+```json
+             "log_options": {
+                  "log_level": "debug",
+                  "log_file": "/var/log/meta-plugins/router.log"
+             },
+             "ip_conflict": {
+                  "enabled": true,
+                  "interval": "1s",
+                  "retries": 5
+             },
+```
+
+- `enabled`: enable or disable this features, default is false.
+- `interval`: the interval of sending arp/ndp message. default is 1 second.
+- `retries`: maximum number of attempts to sending a message, default is 3 times.
+
