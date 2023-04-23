@@ -27,7 +27,7 @@ jobs:
     strategy:
       matrix:
         go_arch: [amd64, arm64]
-        go_version: [1.19.x]
+        go_version: [1.20.x]
 
     name: Binary Build ${{ matrix.go_arch }}
     runs-on: ubuntu-latest
