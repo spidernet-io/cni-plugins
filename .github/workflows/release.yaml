@@ -136,7 +136,7 @@ jobs:
               https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest |yq '.body' > changelog-${latest_release}.md
 
       - name: Create Pull Request
-        if: ${{ steps.save.outputs.release != "" }}
+        if: steps.save.outputs.release != ''
         uses: peter-evans/create-pull-request@v4.2.0
         with:
           title: "robot Update changelog-${{ steps.save.outputs.release }}.md to branch ${{ env.MERGE_BRANCH }} "
