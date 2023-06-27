@@ -245,7 +245,52 @@ func cmdAdd(args *skel.CmdArgs) error {
 }
 
 func cmdDel(args *skel.CmdArgs) error {
-	// nothing to do
+	var logger *zap.Logger
+	conf, err := parseConfig(args.StdinData)
+	if err != nil {
+		return err
+	}
+
+	if err := logging.SetLogOptions(conf.LogOptions); err != nil {
+		return fmt.Errorf("faild to init logger: %v ", err)
+	}
+
+	k8sArgs := ty.K8sArgs{}
+	if err = types.LoadArgs(args.Args, &k8sArgs); nil != err {
+		return fmt.Errorf("failed to get pod information, error=%+v \n", err)
+	}
+
+	logger = logging.LoggerFile.Named(binName)
+
+	// register some args into logger
+	logger = logger.With(zap.String("Action", "Add"),
+		zap.String("ContainerID", args.ContainerID),
+		zap.String("PodUID", string(k8sArgs.K8S_POD_UID)),
+		zap.String("PodName", string(k8sArgs.K8S_POD_NAME)),
+		zap.String("PodNamespace", string(k8sArgs.K8S_POD_NAMESPACE)),
+		zap.String("IfName", args.IfName))
+
+	logger.Debug("Start call veth cmdDel", zap.Any("config", conf))
+
+	hostVeth := getHostVethName(args.ContainerID)
+	vethLink, err := netlink.LinkByName(hostVeth)
+	if err != nil {
+		if _, ok := err.(*netlink.LinkNotFoundError); ok {
+			logger.Debug("Host veth has gone, nothing to do", zap.String("HostVeth", hostVeth))
+			return nil
+		}
+		return fmt.Errorf("failed to get host veth device %s: %w", hostVeth, err)
+	}
+
+	if err = netlink.LinkDel(vethLink); err != nil {
+		logger.Error("failed to del hostVeth", zap.Error(err))
+		return fmt.Errorf("failed to del hostVeth %s: %w", hostVeth, err)
+	} else {
+		logger.Error("success to del hostVeth", zap.String("HostVeth", hostVeth))
+	}
+
+	logger.Debug("Success to call veth cmdDel", zap.Any("config", conf))
+
 	return nil
 }
 
