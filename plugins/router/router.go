@@ -257,6 +257,9 @@ func cmdDel(args *skel.CmdArgs) error {
 	logger.Debug("Start call CmdDel for Router-plugin", zap.Any("Config", *conf))
 	netns, err := ns.GetNS(args.Netns)
 	if err != nil {
+		if _, ok := err.(ns.NSPathNotExistErr); ok {
+			return nil
+		}
 		logger.Error(err.Error())
 		return fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
 	}
