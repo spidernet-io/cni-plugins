@@ -270,7 +270,7 @@ func cmdDel(args *skel.CmdArgs) error {
 		logger.Warn("Pod No IPs, Skip call CmdDel", zap.Error(err))
 	}
 	logger.Debug("Get ChainedInterface IPs", zap.String("interface", args.IfName), zap.Strings("IPs", chainedInterfaceIps))
-	if err = utils.RuleDel(netns, logger, *conf.HostRuleTable, chainedInterfaceIps); err != nil {
+	if err = utils.RuleDel(logger, *conf.HostRuleTable, chainedInterfaceIps); err != nil {
 		logger.Error(err.Error())
 		return err
 	}
@@ -454,7 +454,7 @@ func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, iSriov, enableIpv4, e
 				rule.Table = hostRuleTable
 				rule.Family = family
 				rule.Dst = dst
-				if err = netlink.RuleAdd(rule); err != nil && err.Error() != constant.ErrFileExists {
+				if err = netlink.RuleAdd(rule); err != nil && !os.IsExist(err) {
 					logger.Error("Netlink RuleAdd Failed", zap.String("Rule", rule.String()), zap.Error(err))
 					return fmt.Errorf("failed to add rule table for underlay interface: %v", err)
 				}
@@ -464,7 +464,7 @@ func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, iSriov, enableIpv4, e
 					Dst:       dst,
 					Scope:     netlink.SCOPE_LINK,
 					Table:     hostRuleTable,
-				}); err != nil && err.Error() != constant.ErrFileExists {
+				}); err != nil && !os.IsExist(err) {
 					logger.Error(err.Error())
 					return fmt.Errorf("failed to add route for underlay interface: %v", err)
 				}

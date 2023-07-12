@@ -171,7 +171,7 @@ var _ = Describe("Utils", func() {
 
 			// ruleDel
 			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(testNetNs, logger, table, routes)
+				return RuleDel(logger, table, routes)
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -206,7 +206,7 @@ var _ = Describe("Utils", func() {
 
 			// ruleDel
 			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(testNetNs, logger, table, routes)
+				return RuleDel(logger, table, routes)
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -244,7 +244,7 @@ var _ = Describe("Utils", func() {
 
 			// rule del
 			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(testNetNs, logger, table, routes)
+				return RuleDel(logger, table, routes)
 			})
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -308,7 +308,7 @@ var _ = Describe("Utils", func() {
 
 			// rule del
 			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(testNetNs, logger, table, routes)
+				return RuleDel(logger, table, routes)
 			})
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -339,13 +339,13 @@ var _ = Describe("Utils", func() {
 
 			// del non-exist rule
 			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(testNetNs, logger, table, fake)
+				return RuleDel(logger, table, fake)
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			// clean
 			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(testNetNs, logger, table, routes)
+				return RuleDel(logger, table, routes)
 			})
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -390,7 +390,7 @@ var _ = Describe("Utils", func() {
 
 			// del rule
 			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(testNetNs, logger, table, chainedIPs)
+				return RuleDel(logger, table, chainedIPs)
 			})
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -417,7 +417,7 @@ var _ = Describe("Utils", func() {
 
 			// del rule
 			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(testNetNs, logger, table, chainedIPs)
+				return RuleDel(logger, table, chainedIPs)
 			})
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -445,7 +445,7 @@ var _ = Describe("Utils", func() {
 
 			// del rule
 			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(testNetNs, logger, table, chainedIPs)
+				return RuleDel(logger, table, chainedIPs)
 			})
 			Expect(err).NotTo(HaveOccurred())
 		})
