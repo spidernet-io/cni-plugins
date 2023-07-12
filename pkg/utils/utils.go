@@ -17,7 +17,6 @@ import (
 	"net"
 	"net/netip"
 	"os"
-	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -638,15 +637,15 @@ func compareInterfaceName(current, prev string) bool {
 
 func GetNextHopIPs(logger *zap.Logger, ips []string) ([]net.IP, error) {
 	viaIPs := make([]net.IP, 0, 2)
-	for _, ip := range ips {
-		netIP, _, err := net.ParseCIDR(ip)
+	for _, nip := range ips {
+		netIP, _, err := net.ParseCIDR(nip)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse cidr %s: %v", ip, err)
+			return nil, fmt.Errorf("failed to parse cidr %s: %v", nip, err)
 		}
 		logger.Debug("destination IP", zap.Any("dst", netIP))
 		routes, err := netlink.RouteGet(netIP)
 		if err != nil {
-			return nil, fmt.Errorf("failed to ip route get %s: %v", ip, err)
+			return nil, fmt.Errorf("failed to ip route get %s: %v", nip, err)
 		}
 
 		for _, route := range routes {
@@ -661,32 +660,37 @@ func GetNextHopIPs(logger *zap.Logger, ips []string) ([]net.IP, error) {
 	return viaIPs, nil
 }
 
-func RuleDel(netNS ns.NetNS, logger *zap.Logger, ruleTable int, ips []string) error {
+func RuleDel(logger *zap.Logger, ruleTable int, ips []string) error {
 	logger.Debug("Del Rule Table", zap.Int("RuleTable", ruleTable), zap.Strings("ChainedInterface IP", ips))
-	rules, err := netlink.RuleList(netlink.FAMILY_ALL)
-	if err != nil {
-		logger.Error("failed to del rule table", zap.Error(err))
-		return fmt.Errorf("failed to del rule table %d : %v", ruleTable, err)
-	}
 
 	for _, chainedIP := range ips {
-		_, ipnet, err := net.ParseCIDR(chainedIP)
+		nip, _, err := net.ParseCIDR(chainedIP)
 		if err != nil {
 			logger.Error("failed to del rule table", zap.Error(err))
 			return fmt.Errorf("failed to del rule table %d : %v", ruleTable, err)
 		}
 
-		for _, rule := range rules {
-			if rule.Table == ruleTable && reflect.DeepEqual(rule.Dst, ipnet) {
-				if err = netlink.RuleDel(&rule); err != nil && strings.Contains(err.Error(), ErrFileNotFound) {
-					logger.Error("failed to del rule table", zap.Error(err))
-					return fmt.Errorf("failed to del rule table %d: %v ", ruleTable, err)
-				}
-			}
+		dst := net.IPNet{
+			IP:   nip,
+			Mask: net.IPMask{},
+		}
+
+		if nip.To4() != nil {
+			dst.Mask = net.CIDRMask(32, 32)
+		} else {
+			dst.Mask = net.CIDRMask(128, 128)
+		}
+
+		rule := netlink.NewRule()
+		rule.Table = ruleTable
+		rule.Dst = &dst
+		if err = netlink.RuleDel(rule); err != nil && !os.IsNotExist(err) {
+			logger.Error("failed to del rule table", zap.Error(err))
+			return fmt.Errorf("failed to del rule table %d: %v ", ruleTable, err)
 		}
 	}
 
-	return err
+	return nil
 }
 
 // AddStaticNeighTable fix the problem of communication failure between pods and hosts by adding neigh table on pod and host
@@ -760,17 +764,20 @@ func AddStaticNeighTable(logger *zap.Logger, netns ns.NetNS, iSriov, enableIpv4,
 			logger.Error(err.Error())
 			return err
 		}
+		dst := &net.IPNet{
+			IP:   netIP,
+			Mask: net.IPMask{},
+		}
+
 		if netIP.To4() == nil {
-			dst := &net.IPNet{
-				IP: netIP,
-			}
-			dst.Mask = net.IPMask{}
 			dst.Mask = net.CIDRMask(128, 128)
-			if err = NeighborAdd(logger, hostLink.Attrs().Name, defaultOverlayMac, dst.String()); err != nil {
-				logger.Error(err.Error())
-				return err
-			}
-			break
+		} else {
+			dst.Mask = net.CIDRMask(32, 32)
+		}
+
+		if err = NeighborAdd(logger, hostLink.Attrs().Name, defaultOverlayMac, dst.String()); err != nil {
+			logger.Error(err.Error())
+			return err
 		}
 	}
 	logger.Debug("succeed to add neighbor table for ipv6", zap.Strings("host ipv6 ips", hostIPs))
@@ -797,7 +804,8 @@ func NeighborAdd(logger *zap.Logger, iface, mac string, ipStr string) error {
 		IP:           netIP,
 		HardwareAddr: parseMac(mac),
 	}
-	if err := netlink.NeighAdd(neigh); err != nil && !strings.EqualFold(err.Error(), "file exists") {
+
+	if err := netlink.NeighAdd(neigh); err != nil && !os.IsExist(err) {
 		logger.Error("failed to add neigh table", zap.String("interface", iface), zap.String("neigh", neigh.String()), zap.Error(err))
 		return fmt.Errorf("failed to add neigh table: %v ", err)
 	}
