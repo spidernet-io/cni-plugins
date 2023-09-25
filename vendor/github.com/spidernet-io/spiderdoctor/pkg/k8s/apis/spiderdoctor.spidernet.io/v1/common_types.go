@@ -77,6 +77,10 @@ type StatusHistoryRecord struct {
 	// +kubebuilder:validation:Format:=date-time
 	DeadLineTimeStamp metav1.Time `json:"deadLineTimeStamp"`
 
+	// +kubebuilder:validation:Optional
+	// expected how many agents should involve
+	ExpectedActorNumber *int `json:"expectedActorNumber,omitempty"`
+
 	FailedAgentNodeList []string `json:"failedAgentNodeList"`
 
 	SucceedAgentNodeList []string `json:"succeedAgentNodeList"`

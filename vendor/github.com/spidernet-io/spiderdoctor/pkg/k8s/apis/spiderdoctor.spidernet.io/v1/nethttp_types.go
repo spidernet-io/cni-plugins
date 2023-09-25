@@ -37,7 +37,7 @@ type NethttpRequest struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default=5
 	// +kubebuilder:validation:Minimum=1
-	PerRequestTimeoutInSecond int `json:"perRequestTimeoutInSecond,omitempty"`
+	PerRequestTimeoutInMS int `json:"perRequestTimeoutInMS,omitempty"`
 }
 
 type TargetAgentSepc struct {
@@ -62,13 +62,42 @@ type TargetAgentSepc struct {
 	TestNodePort bool `json:"testNodePort,omitempty"`
 
 	// +kubebuilder:default=false
+	TestLoadBalancer bool `json:"testLoadBalancer,omitempty"`
+
+	// +kubebuilder:default=false
 	TestIngress bool `json:"testIngress,omitempty"`
+}
+
+type TargetPodSepc struct {
+	// +kubebuilder:validation:Optional
+	PodLabelSelector metav1.LabelSelector `json:"podLabelSelector,omitempty"`
+
+	// +kubebuilder:validation:Minimum=1
+	HttpPort int `json:"httpPort"`
+
+	// +kubebuilder:validation:Type:=string
+	// +kubebuilder:validation:Enum=GET;POST;PUT;DELETE;CONNECT;OPTIONS;PATCH;HEAD
+	Method string `json:"method"`
+
+	// +kubebuilder:default=true
+	// +kubebuilder:validation:Optional
+	TestIPv4 *bool `json:"testIPv4,omitempty"`
+
+	// +kubebuilder:default=false
+	// +kubebuilder:validation:Optional
+	TestIPv6 *bool `json:"testIPv6,omitempty"`
+
+	// +kubebuilder:default=false
+	TestMultusInterface bool `json:"testMultusInterface,omitempty"`
 }
 
 type NethttpTarget struct {
 
 	// +kubebuilder:validation:Optional
 	TargetUser *HttpTarget `json:"targetUser,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	TargetPod *TargetPodSepc `json:"targetPod,omitempty"`
 
 	// +kubebuilder:validation:Optional
 	TargetAgent *TargetAgentSepc `json:"targetAgent,omitempty"`

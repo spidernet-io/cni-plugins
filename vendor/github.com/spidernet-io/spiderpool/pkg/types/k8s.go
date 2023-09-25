@@ -104,5 +104,6 @@ type AutoPoolProperty struct {
 	IPVersion       IPVersion
 	IsReclaimIPPool bool
 	IfName          string
-	PodSelector     *metav1.LabelSelector
+	// AnnoPoolIPNumberVal serves for AutoPool annotation to explain whether it is IP number flexible or fixed.
+	AnnoPoolIPNumberVal string
 }

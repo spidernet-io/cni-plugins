@@ -11,6 +11,8 @@
 
 Currently, the CNI-Meta-Plugins is under beta stage, not ready for production environment yet.
 
+> UPDATED: Most of the code in this repository has been migrated to [spiderpool](https://github.com/spidernet-io/spiderpool), and this repository has been marked as deprecated and is no longer maintained.
+
 ## Introduction
 
 The CNI-Meta-Plugin is a collection of cni plugins designed to solve various network communication problems in the case of multiple network interface in the pod. Currently, it includes two plugins, router and veth
