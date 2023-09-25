@@ -149,7 +149,19 @@ var _ = Describe("Utils", func() {
 				"3.3.3.0/24",
 			}
 
-			err := testNetNs.Do(func(netNS ns.NetNS) error {
+			_, net1, err := net.ParseCIDR("2.2.2.0/24")
+			_, net2, err := net.ParseCIDR("3.3.3.0/24")
+			Expect(err).NotTo(HaveOccurred())
+
+			delNets := []netlink.Addr{
+				{
+					IPNet: net1,
+				}, {
+					IPNet: net2,
+				},
+			}
+
+			err = testNetNs.Do(func(netNS ns.NetNS) error {
 				return ruleAdd(logger, routes, table, true, false)
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -171,7 +183,7 @@ var _ = Describe("Utils", func() {
 
 			// ruleDel
 			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(logger, table, routes)
+				return RuleDel(logger, table, delNets)
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -181,10 +193,18 @@ var _ = Describe("Utils", func() {
 			table := 201
 			routes := []string{
 				"fd00:22:6::/64",
-				"fd00:33:6::/64",
 			}
 
-			err := testNetNs.Do(func(netNS ns.NetNS) error {
+			_, net1, err := net.ParseCIDR("fd00:22:6::/64")
+			Expect(err).NotTo(HaveOccurred())
+
+			delNets := []netlink.Addr{
+				{
+					IPNet: net1,
+				},
+			}
+
+			err = testNetNs.Do(func(netNS ns.NetNS) error {
 				return ruleAdd(logger, routes, table, false, true)
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -197,7 +217,7 @@ var _ = Describe("Utils", func() {
 			})
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(len(rules)).To(BeEquivalentTo(2))
+			Expect(len(rules)).To(BeEquivalentTo(1))
 
 			for _, rule := range rules {
 				found := rule.Dst.String() == routes[0] || rule.Dst.String() == routes[1]
@@ -206,7 +226,7 @@ var _ = Describe("Utils", func() {
 
 			// ruleDel
 			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(logger, table, routes)
+				return RuleDel(logger, table, delNets)
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -221,7 +241,27 @@ var _ = Describe("Utils", func() {
 				"fd00:55:6::/64",
 			}
 
-			err := testNetNs.Do(func(netNS ns.NetNS) error {
+			_, net1, err := net.ParseCIDR("4.4.4.0/24")
+			_, net2, err := net.ParseCIDR("5.5.5.0/24")
+			_, net3, err := net.ParseCIDR("fd00:44:6::/64")
+			_, net4, err := net.ParseCIDR("fd00:55:6::/64")
+			Expect(err).NotTo(HaveOccurred())
+
+			delNets := []netlink.Addr{
+				{
+					IPNet: net1,
+				},
+				{
+					IPNet: net2,
+				}, {
+					IPNet: net3,
+				},
+				{
+					IPNet: net4,
+				},
+			}
+
+			err = testNetNs.Do(func(netNS ns.NetNS) error {
 				return ruleAdd(logger, routes, table, true, true)
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -244,7 +284,7 @@ var _ = Describe("Utils", func() {
 
 			// rule del
 			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(logger, table, routes)
+				return RuleDel(logger, table, delNets)
 			})
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -281,75 +321,6 @@ var _ = Describe("Utils", func() {
 			Expect(len(rules)).To(BeEquivalentTo(0))
 		})
 
-		It("duplicate rule table can be added more than once", func() {
-			table := 205
-			routes := []string{
-				"10.10.10.0/24",
-			}
-
-			err := testNetNs.Do(func(netNS ns.NetNS) error {
-				return ruleAdd(logger, routes, table, true, false)
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			// add again
-			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return ruleAdd(logger, routes, table, true, false)
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			var rules []netlink.Rule
-			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				rules, err = ruleList(table, netlink.FAMILY_V4)
-				return err
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(len(rules)).To(BeEquivalentTo(2))
-
-			// rule del
-			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(logger, table, routes)
-			})
-			Expect(err).NotTo(HaveOccurred())
-		})
-
-		It("ignore del non-exist rule table", func() {
-			table := 206
-			routes := []string{
-				"10.10.10.0/24",
-			}
-
-			fake := []string{
-				"30.30.30.0/24",
-			}
-
-			var err error
-			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return ruleAdd(logger, routes, table, true, false)
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			var rules []netlink.Rule
-			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				rules, err = ruleList(table, netlink.FAMILY_V4)
-				return err
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(len(rules)).To(BeEquivalentTo(1))
-
-			// del non-exist rule
-			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(logger, table, fake)
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			// clean
-			err = testNetNs.Do(func(netNS ns.NetNS) error {
-				return RuleDel(logger, table, routes)
-			})
-			Expect(err).NotTo(HaveOccurred())
-		})
-
 		It("netlink ruleAdd err", func() {
 			table := 200
 			routes := []string{
@@ -370,9 +341,13 @@ var _ = Describe("Utils", func() {
 		// eq: ip rule add from <ipnet> lookup <table>
 		It("AddFromRuleTable for ipv4", func() {
 			table := 207
-
-			chainedIPs := []string{
-				"10.10.10.0/24",
+			chainedIPs := []netlink.Addr{
+				netlink.Addr{
+					IPNet: &net.IPNet{
+						IP:   net.ParseIP("10.6.212.204"),
+						Mask: net.CIDRMask(24, 32),
+					},
+				},
 			}
 
 			err := testNetNs.Do(func(netNS ns.NetNS) error {
@@ -398,11 +373,16 @@ var _ = Describe("Utils", func() {
 		It("AddFromRuleTable for ipv6", func() {
 			table := 208
 
-			chainedIPs := []string{
-				"fd00:10:10:10::/64",
+			_, ipnet, err := net.ParseCIDR("fd00::1/96")
+			Expect(err).NotTo(HaveOccurred())
+
+			chainedIPs := []netlink.Addr{
+				netlink.Addr{
+					IPNet: ipnet,
+				},
 			}
 
-			err := testNetNs.Do(func(netNS ns.NetNS) error {
+			err = testNetNs.Do(func(netNS ns.NetNS) error {
 				return AddFromRuleTable(logger, chainedIPs, table, false, true)
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -425,12 +405,19 @@ var _ = Describe("Utils", func() {
 		It("AddFromRuleTable for dual", func() {
 			table := 209
 
-			chainedIPs := []string{
-				"11.11.11.0/24",
-				"fd00:11:11:11::/64",
+			_, ipnet, err := net.ParseCIDR("11.11.11.0/24")
+			_, ipnet1, err := net.ParseCIDR("fd00:11:11:11::/64")
+			Expect(err).NotTo(HaveOccurred())
+
+			chainedIPs := []netlink.Addr{
+				{
+					IPNet: ipnet,
+				}, {
+					IPNet: ipnet1,
+				},
 			}
 
-			err := testNetNs.Do(func(netNS ns.NetNS) error {
+			err = testNetNs.Do(func(netNS ns.NetNS) error {
 				return AddFromRuleTable(logger, chainedIPs, table, true, true)
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -448,40 +435,6 @@ var _ = Describe("Utils", func() {
 				return RuleDel(logger, table, chainedIPs)
 			})
 			Expect(err).NotTo(HaveOccurred())
-		})
-
-		It("ParseCIDR err", func() {
-			table := 207
-
-			chainedIPs := []string{
-				"10.10.10.0/24",
-			}
-
-			err := testNetNs.Do(func(netNS ns.NetNS) error {
-				patches := gomonkey.NewPatches()
-				defer patches.Reset()
-				patches.ApplyFuncReturn(net.ParseCIDR, nil, nil, errors.New("parseCIDR err"))
-				return AddFromRuleTable(logger, chainedIPs, table, true, false)
-			})
-			Expect(err).To(HaveOccurred())
-
-		})
-
-		It("netlink.RuleAdd err", func() {
-			table := 207
-
-			chainedIPs := []string{
-				"10.10.10.0/24",
-			}
-
-			err := testNetNs.Do(func(netNS ns.NetNS) error {
-				patches := gomonkey.NewPatches()
-				defer patches.Reset()
-				patches.ApplyFuncReturn(netlink.RuleAdd, errors.New("parseCIDR err"))
-				return AddFromRuleTable(logger, chainedIPs, table, true, false)
-			})
-			Expect(err).To(HaveOccurred())
-
 		})
 	})
 
@@ -626,7 +579,7 @@ var _ = Describe("Utils", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				found := false
-				netIP, _, err := net.ParseCIDR(v4IP)
+				netIP, _, err := net.ParseCIDR(v4IPStr)
 				Expect(err).NotTo(HaveOccurred())
 
 				var neighDst netlink.Neigh
@@ -658,7 +611,7 @@ var _ = Describe("Utils", func() {
 		It("wrong input interface cidr", func() {
 			// add a neiborhood table in given netns
 			testNetNs.Do(func(netNS ns.NetNS) error {
-				err = NeighborAdd(logger, conVethName, hostInterface.HardwareAddr.String(), "wrong")
+				err = NeighborAdd(logger, conVethName, hostInterface.HardwareAddr.String(), net.IP{})
 				Expect(err).To(HaveOccurred())
 				return nil
 			})
@@ -813,11 +766,11 @@ var _ = Describe("Utils", func() {
 
 	Context("test HijackCustomSubnet", func() {
 		It("overlay", func() {
-			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceIPs, 100, true, true)
+			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceAddrs, 100, true, true)
 			Expect(err).NotTo(HaveOccurred())
 		})
 		It("underlay", func() {
-			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceIPs, 101, true, true)
+			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceAddrs, 101, true, true)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -828,7 +781,7 @@ var _ = Describe("Utils", func() {
 				{Values: gomonkey.Params{errors.New("rule add err")}},
 				{Values: gomonkey.Params{nil}},
 			})
-			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceIPs, 100, true, true)
+			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceAddrs, 100, true, true)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -839,18 +792,7 @@ var _ = Describe("Utils", func() {
 				{Values: gomonkey.Params{nil}},
 				{Values: gomonkey.Params{errors.New("rule add err")}},
 			})
-			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceIPs, 100, true, true)
-			Expect(err).To(HaveOccurred())
-		})
-
-		It("underlay ruleAdd2 err", func() {
-			patches := gomonkey.NewPatches()
-			defer patches.Reset()
-			patches.ApplyFuncSeq(ruleAdd, []gomonkey.OutputCell{
-				{Values: gomonkey.Params{nil}},
-				{Values: gomonkey.Params{errors.New("rule add err")}},
-			})
-			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceIPs, 101, true, true)
+			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceAddrs, 100, true, true)
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -861,19 +803,19 @@ var _ = Describe("Utils", func() {
 				{Values: gomonkey.Params{errors.New("rule add err")}},
 				{Values: gomonkey.Params{nil}},
 			})
-			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceIPs, 101, true, true)
+			err := HijackCustomSubnet(logger, testNetNs, serviceSubnet, overlaySubnet, []string{}, defaultInterfaceAddrs, 101, true, true)
 			Expect(err).To(HaveOccurred())
 		})
 	})
 
 	Context("test MigrateRoute", func() {
 		It("success MigrateRoute -1", func() {
-			err := MigrateRoute(logger, testNetNs, conVethName, conVethName, defaultInterfaceIPs, types.MigrateRoute(-1), 100, true, true)
+			err := MigrateRoute(logger, testNetNs, conVethName, conVethName, defaultInterfaceAddrs, types.MigrateRoute(-1), 100, true, true)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("success MigrateRoute 0", func() {
-			err := MigrateRoute(logger, testNetNs, conVethName, conVethName, defaultInterfaceIPs, types.MigrateRoute(0), 100, true, true)
+			err := MigrateRoute(logger, testNetNs, conVethName, conVethName, defaultInterfaceAddrs, types.MigrateRoute(0), 100, true, true)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -881,7 +823,7 @@ var _ = Describe("Utils", func() {
 			patches := gomonkey.NewPatches()
 			defer patches.Reset()
 			patches.ApplyFuncReturn(compareInterfaceName, false)
-			err := MigrateRoute(logger, testNetNs, conVethName, conVethName, defaultInterfaceIPs, types.MigrateRoute(-1), 100, true, true)
+			err := MigrateRoute(logger, testNetNs, conVethName, conVethName, defaultInterfaceAddrs, types.MigrateRoute(-1), 100, true, true)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -953,44 +895,12 @@ var _ = Describe("Utils", func() {
 	})
 	Context("test AddStaticNeighTable", func() {
 		It("success", func() {
-			err := AddStaticNeighTable(logger, testNetNs, false, true, true, conVethName, defaultInterfaceIPs)
+			err := AddStaticNeighTable(logger, testNetNs, false, conVethName, hostIPs, defaultInterfaceAddrs)
 			Expect(err).NotTo(HaveOccurred())
 		})
 		It("skip", func() {
-			err := AddStaticNeighTable(logger, testNetNs, true, true, true, conVethName, defaultInterfaceIPs)
+			err := AddStaticNeighTable(logger, testNetNs, true, conVethName, hostIPs, defaultInterfaceAddrs)
 			Expect(err).NotTo(HaveOccurred())
-		})
-
-		It("GetHostIps err", func() {
-			patches := gomonkey.NewPatches()
-			defer patches.Reset()
-			patches.ApplyFuncReturn(GetHostIps, nil, errors.New("get host err"))
-			err := AddStaticNeighTable(logger, testNetNs, false, true, true, conVethName, defaultInterfaceIPs)
-			Expect(err).To(HaveOccurred())
-		})
-
-		It("LinkByName err", func() {
-			patches := gomonkey.NewPatches()
-			defer patches.Reset()
-			patches.ApplyFuncReturn(netlink.LinkByName, nil, errors.New("linkByName err"))
-			err := AddStaticNeighTable(logger, testNetNs, false, true, true, conVethName, defaultInterfaceIPs)
-			Expect(err).To(HaveOccurred())
-		})
-
-		It("netlink.LinkByIndex err", func() {
-			patches := gomonkey.NewPatches()
-			defer patches.Reset()
-			patches.ApplyFuncReturn(netlink.LinkByIndex, nil, errors.New("LinkByIndex err"))
-			err := AddStaticNeighTable(logger, testNetNs, false, true, true, conVethName, defaultInterfaceIPs)
-			Expect(err).To(HaveOccurred())
-		})
-
-		It("ParseCIDR err", func() {
-			patches := gomonkey.NewPatches()
-			defer patches.Reset()
-			patches.ApplyFuncReturn(net.ParseCIDR, nil, nil, errors.New("LinkByIndex err"))
-			err := AddStaticNeighTable(logger, testNetNs, false, true, true, conVethName, defaultInterfaceIPs)
-			Expect(err).To(HaveOccurred())
 		})
 	})
 

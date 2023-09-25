@@ -35,6 +35,7 @@ const (
 
 var K8sKinds = []string{KindPod, KindDeployment, KindReplicaSet, KindDaemonSet, KindStatefulSet, KindJob, KindCronJob}
 var K8sAPIVersions = []string{corev1.SchemeGroupVersion.String(), appsv1.SchemeGroupVersion.String(), batchv1.SchemeGroupVersion.String()}
+var AutoPoolPodAffinities = []string{AutoPoolPodAffinityAppAPIGroup, AutoPoolPodAffinityAppAPIVersion, AutoPoolPodAffinityAppKind, AutoPoolPodAffinityAppNS, AutoPoolPodAffinityAppName}
 
 const (
 	PodRunning     types.PodStatus = "Running"
@@ -61,30 +62,57 @@ const (
 	AnnoSpiderSubnets             = AnnotationPre + "/subnets"
 	AnnoSpiderSubnetPoolIPNumber  = AnnotationPre + "/ippool-ip-number"
 	AnnoSpiderSubnetReclaimIPPool = AnnotationPre + "/ippool-reclaim"
-	AnnoSpiderSubnetPoolApp       = AnnotationPre + "/application"
 
-	LabelIPPoolOwnerSpiderSubnet   = AnnotationPre + "/owner-spider-subnet"
-	LabelIPPoolOwnerApplicationUID = AnnotationPre + "/owner-application-uid"
-	LabelIPPoolReclaimIPPool       = AnnoSpiderSubnetReclaimIPPool
+	LabelIPPoolReclaimIPPool             = AnnoSpiderSubnetReclaimIPPool
+	LabelIPPoolOwnerSpiderSubnet         = AnnotationPre + "/owner-spider-subnet"
+	LabelIPPoolOwnerApplicationGV        = AnnotationPre + "/owner-application-gv"
+	LabelIPPoolOwnerApplicationKind      = AnnotationPre + "/owner-application-kind"
+	LabelIPPoolOwnerApplicationNamespace = AnnotationPre + "/owner-application-namespace"
+	LabelIPPoolOwnerApplicationName      = AnnotationPre + "/owner-application-name"
+	LabelIPPoolOwnerApplicationUID       = AnnotationPre + "/owner-application-uid"
+	LabelIPPoolInterface                 = AnnotationPre + "/interface"
+	LabelIPPoolIPVersion                 = AnnotationPre + "/ip-version"
+	LabelValueIPVersionV4                = "IPv4"
+	LabelValueIPVersionV6                = "IPv6"
 
 	LabelSubnetCIDR = AnnotationPre + "/subnet-cidr"
 	LabelIPPoolCIDR = AnnotationPre + "/ippool-cidr"
+
+	// auto pool special pod affinity matchLabels key
+	AutoPoolPodAffinityAppPrefix     = AnnotationPre
+	AutoPoolPodAffinityAppAPIGroup   = AutoPoolPodAffinityAppPrefix + "/app-api-group"
+	AutoPoolPodAffinityAppAPIVersion = AutoPoolPodAffinityAppPrefix + "/app-api-version"
+	AutoPoolPodAffinityAppKind       = AutoPoolPodAffinityAppPrefix + "/app-kind"
+	AutoPoolPodAffinityAppNS         = AutoPoolPodAffinityAppPrefix + "/app-namespace"
+	AutoPoolPodAffinityAppName       = AutoPoolPodAffinityAppPrefix + "/app-name"
+
+	// SpiderMultusConfig
+	MultusConfAnnoPre          = "multus.spidernet.io"
+	AnnoNetAttachConfName      = MultusConfAnnoPre + "/cr-name"
+	AnnoMultusConfigCNIVersion = MultusConfAnnoPre + "/cni-version"
+
+	// Coordinator
+	AnnoDefaultRouteInterface = AnnotationPre + "/default-route-nic"
 )
 
 const (
 	Spiderpool           = "spiderpool"
 	SpiderpoolAgent      = "spiderpool-agent"
 	SpiderpoolController = "spiderpool-controller"
+	Coordinator          = "coordinator"
+	Ifacer               = "ifacer"
 )
 
 const (
-	SpiderFinalizer      = SpiderpoolAPIGroup
-	SpiderpoolAPIGroup   = "spiderpool.spidernet.io"
-	SpiderpoolAPIVersion = "v2beta1"
-	KindSpiderSubnet     = "SpiderSubnet"
-	KindSpiderIPPool     = "SpiderIPPool"
-	KindSpiderEndpoint   = "SpiderEndpoint"
-	KindSpiderReservedIP = "SpiderReservedIP"
+	SpiderFinalizer        = SpiderpoolAPIGroup
+	SpiderpoolAPIGroup     = "spiderpool.spidernet.io"
+	SpiderpoolAPIVersion   = "v2beta1"
+	KindSpiderSubnet       = "SpiderSubnet"
+	KindSpiderIPPool       = "SpiderIPPool"
+	KindSpiderEndpoint     = "SpiderEndpoint"
+	KindSpiderReservedIP   = "SpiderReservedIP"
+	KindSpiderCoordinator  = "SpiderCoordinator"
+	KindSpiderMultusConfig = "SpiderMultusConfig"
 )
 
 const (
@@ -109,3 +137,11 @@ const (
 )
 
 const ClusterDefaultInterfaceName = "eth0"
+
+// multus-cni annotation
+const (
+	MultusDefaultNetAnnot        = "v1.multus-cni.io/default-network"
+	MultusNetworkAttachmentAnnot = "k8s.v1.cni.cncf.io/networks"
+	ResourceNameAnnot            = "k8s.v1.cni.cncf.io/resourceName"
+	ResourceNameOvsCniValue      = "ovs-cni.network.kubevirt.io"
+)

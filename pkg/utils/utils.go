@@ -288,7 +288,7 @@ func EnableIpv6Sysctl(logger *zap.Logger, netns ns.NetNS) error {
 // HijackCustomSubnet set ip rule : to Subnet table $routeTable
 // if first macvlan interface, move service/pod subnet route to table 100: ip rule add from all to service/pod look table 100
 // else only move custom route to table <ruleTable>: ip rule add from all to <custom_subnet> look table <ruletable>
-func HijackCustomSubnet(logger *zap.Logger, netns ns.NetNS, serviceSubnet, overlaySubnet, additionalSubnet, defaultInterfaceIPs []string, routeTable int, enableIpv4, enableIpv6 bool) error {
+func HijackCustomSubnet(logger *zap.Logger, netns ns.NetNS, serviceSubnet, overlaySubnet, additionalSubnet []string, defaultInterfaceIPs []netlink.Addr, routeTable int, enableIpv4, enableIpv6 bool) error {
 	logger.Debug(fmt.Sprintf("Hijack Custom Subnet to %v ", routeTable), zap.String("Netns Path", netns.Path()),
 		zap.Bool("enableIpv4", enableIpv4),
 		zap.Bool("enableIpv6", enableIpv6))
@@ -297,17 +297,16 @@ func HijackCustomSubnet(logger *zap.Logger, netns ns.NetNS, serviceSubnet, overl
 		// only first macvlan interface, we add rule table for it.
 		// eq: ip rule add from <overlay/service subnet> lookup <ruleTable>
 		if routeTable == overlayRouteTable {
-			if err = ruleAdd(logger, overlaySubnet, routeTable, enableIpv4, enableIpv6); err != nil {
+			allSubnets := append(overlaySubnet, serviceSubnet...)
+			if err = ruleAdd(logger, allSubnets, routeTable, enableIpv4, enableIpv6); err != nil {
 				return err
 			}
-			if err = ruleAdd(logger, serviceSubnet, routeTable, enableIpv4, enableIpv6); err != nil {
-				return err
-			}
+
 		} else {
 			// As for more than two macvlan interface, we need to add something like below shown:
 			// eq: ip rule add to <defaultInterfaceIPs > lookup table <ruleTable>
 			// net2: ip rule add to <net1 subnet> lookup table <ruleTable>
-			if err = ruleAdd(logger, defaultInterfaceIPs, routeTable, enableIpv4, enableIpv6); err != nil {
+			if err = toRuleAdd(logger, defaultInterfaceIPs, routeTable, enableIpv4, enableIpv6); err != nil {
 				return err
 			}
 		}
@@ -359,8 +358,39 @@ func ruleAdd(logger *zap.Logger, routes []string, routeTable int, enableIpv4, en
 	return nil
 }
 
+func toRuleAdd(logger *zap.Logger, routes []netlink.Addr, routeTable int, enableIpv4, enableIpv6 bool) error {
+	for _, route := range routes {
+		var family int
+		match := false
+		if route.IP.To4() != nil && enableIpv4 {
+			family = netlink.FAMILY_V4
+			match = true
+		}
+		if route.IP.To4() == nil && enableIpv6 {
+			family = netlink.FAMILY_V6
+			match = true
+		}
+
+		if !match {
+			logger.Warn("the route given does not match the ipVersion of the pod, ignore the creation of this route", zap.String("route", route.String()))
+			continue
+		}
+
+		rule := netlink.NewRule()
+		rule.Dst = route.IPNet
+		rule.Family = family
+		rule.Table = routeTable
+		logger.Debug("HijackCustomSubnet Add Rule table", zap.Int("ipfamily", family), zap.String("dst", rule.Dst.String()))
+		if err := netlink.RuleAdd(rule); err != nil && !strings.EqualFold(err.Error(), constant.ErrRouteFileExist) {
+			logger.Error(err.Error())
+			return fmt.Errorf("failed to set ip rule(%+v rule.Dst %v): %+v", rule, rule.Dst, err)
+		}
+	}
+	return nil
+}
+
 // MigrateRoute make sure that the reply packets accessing the overlay interface are still sent from the overlay interface.
-func MigrateRoute(logger *zap.Logger, netns ns.NetNS, defaultInterface, chainedInterface string, defaultInterfaceIPs []string, value types.MigrateRoute, ruleTable int, enableIpv4, enableIpv6 bool) error {
+func MigrateRoute(logger *zap.Logger, netns ns.NetNS, defaultInterface, chainedInterface string, defaultInterfaceIPs []netlink.Addr, value types.MigrateRoute, ruleTable int, enableIpv4, enableIpv6 bool) error {
 	/*
 		1. if migrateValue = -1, auto migrate route by interface name, if current_interface > last_interface by directory order, do migrate else nothing to do
 		2. if migrateValue = 1, do migrate directly
@@ -423,28 +453,21 @@ func MigrateRoute(logger *zap.Logger, netns ns.NetNS, defaultInterface, chainedI
 
 // AddFromRuleTable add route rule for calico/cilium cidr(ipv4 and ipv6)
 // Equivalent to: `ip rule add from <cidr> `
-func AddFromRuleTable(logger *zap.Logger, chainedIPs []string, ruleTable int, enableIpv4, enableIpv6 bool) error {
+func AddFromRuleTable(logger *zap.Logger, chainedIPs []netlink.Addr, ruleTable int, enableIpv4, enableIpv6 bool) error {
 	logger.Debug("Add FromRule Table in Pod Netns")
 	for _, chainedIP := range chainedIPs {
-		netIP, _, err := net.ParseCIDR(chainedIP)
-		if err != nil {
-			return fmt.Errorf("failed to parse cidr %s: %v", chainedIP, err)
-		}
-		if netIP.IsMulticast() || netIP.IsLinkLocalUnicast() {
-			continue
-		}
 		mask := net.IPMask{}
-		if netIP.To4() != nil && enableIpv4 {
+		if chainedIP.IP.To4() != nil && enableIpv4 {
 			mask = net.CIDRMask(32, 32)
 		}
-		if netIP.To4() == nil && enableIpv6 {
+		if chainedIP.IP.To4() == nil && enableIpv6 {
 			mask = net.CIDRMask(128, 128)
 		}
 
 		rule := netlink.NewRule()
 		rule.Table = ruleTable
 		rule.Src = &net.IPNet{
-			IP:   netIP,
+			IP:   chainedIP.IP,
 			Mask: mask,
 		}
 		logger.Debug("Netlink RuleAdd", zap.String("Rule", rule.String()))
@@ -660,22 +683,16 @@ func GetNextHopIPs(logger *zap.Logger, ips []string) ([]net.IP, error) {
 	return viaIPs, nil
 }
 
-func RuleDel(logger *zap.Logger, ruleTable int, ips []string) error {
-	logger.Debug("Del Rule Table", zap.Int("RuleTable", ruleTable), zap.Strings("ChainedInterface IP", ips))
+func RuleDel(logger *zap.Logger, ruleTable int, ips []netlink.Addr) error {
+	logger.Debug("Del Rule Table", zap.Int("RuleTable", ruleTable), zap.Any("ChainedInterface IP", ips))
 
 	for _, chainedIP := range ips {
-		nip, _, err := net.ParseCIDR(chainedIP)
-		if err != nil {
-			logger.Error("failed to del rule table", zap.Error(err))
-			return fmt.Errorf("failed to del rule table %d : %v", ruleTable, err)
-		}
-
 		dst := net.IPNet{
-			IP:   nip,
+			IP:   chainedIP.IP,
 			Mask: net.IPMask{},
 		}
 
-		if nip.To4() != nil {
+		if chainedIP.IP.To4() != nil {
 			dst.Mask = net.CIDRMask(32, 32)
 		} else {
 			dst.Mask = net.CIDRMask(128, 128)
@@ -684,7 +701,7 @@ func RuleDel(logger *zap.Logger, ruleTable int, ips []string) error {
 		rule := netlink.NewRule()
 		rule.Table = ruleTable
 		rule.Dst = &dst
-		if err = netlink.RuleDel(rule); err != nil && !os.IsNotExist(err) {
+		if err := netlink.RuleDel(rule); err != nil && !os.IsNotExist(err) {
 			logger.Error("failed to del rule table", zap.Error(err))
 			return fmt.Errorf("failed to del rule table %d: %v ", ruleTable, err)
 		}
@@ -694,7 +711,7 @@ func RuleDel(logger *zap.Logger, ruleTable int, ips []string) error {
 }
 
 // AddStaticNeighTable fix the problem of communication failure between pods and hosts by adding neigh table on pod and host
-func AddStaticNeighTable(logger *zap.Logger, netns ns.NetNS, iSriov, enableIpv4, enableIpv6 bool, defaultOverlayInterface string, chainedInterfaceIps []string) error {
+func AddStaticNeighTable(logger *zap.Logger, netns ns.NetNS, iSriov bool, defaultOverlayInterface string, hostIPs []net.IP, chainedInterfaceIps []netlink.Addr) error {
 	if iSriov {
 		logger.Info("Main-cni is sriov, don't need set chained route")
 		return nil
@@ -702,13 +719,7 @@ func AddStaticNeighTable(logger *zap.Logger, netns ns.NetNS, iSriov, enableIpv4,
 
 	parentIndex := -1
 	defaultOverlayMac := ""
-	hostIPs, err := GetHostIps(logger, enableIpv4, enableIpv6)
-	if err != nil {
-		logger.Error("", zap.Error(err))
-		return err
-	}
-
-	err = netns.Do(func(_ ns.NetNS) error {
+	err := netns.Do(func(_ ns.NetNS) error {
 		link, err := netlink.LinkByName(defaultOverlayInterface)
 		if err != nil {
 			logger.Error("", zap.Error(err))
@@ -742,7 +753,6 @@ func AddStaticNeighTable(logger *zap.Logger, netns ns.NetNS, iSriov, enableIpv4,
 
 	// add neigh table in pod
 	// eq: ip n add <host IP> dev eth0 lladdr <host veth-peer mac> nud permanent
-	// only for ipv6
 	err = netns.Do(func(_ ns.NetNS) error {
 		for _, hostIP := range hostIPs {
 			if err := NeighborAdd(logger, defaultOverlayInterface, hostLink.Attrs().HardwareAddr.String(), hostIP); err != nil {
@@ -759,44 +769,21 @@ func AddStaticNeighTable(logger *zap.Logger, netns ns.NetNS, iSriov, enableIpv4,
 
 	// eq: ip n add <chained interface IP> dev <host veth-peer > lladdr < defaultInterface Mac> nud permanent (only for ipv6)
 	for _, chainedInterfaceIP := range chainedInterfaceIps {
-		netIP, _, err := net.ParseCIDR(chainedInterfaceIP)
-		if err != nil {
-			logger.Error(err.Error())
-			return err
-		}
-		dst := &net.IPNet{
-			IP:   netIP,
-			Mask: net.IPMask{},
-		}
-
-		if netIP.To4() == nil {
-			dst.Mask = net.CIDRMask(128, 128)
-		} else {
-			dst.Mask = net.CIDRMask(32, 32)
-		}
-
-		if err = NeighborAdd(logger, hostLink.Attrs().Name, defaultOverlayMac, dst.String()); err != nil {
+		if err = NeighborAdd(logger, hostLink.Attrs().Name, defaultOverlayMac, chainedInterfaceIP.IP); err != nil {
 			logger.Error(err.Error())
 			return err
 		}
 	}
-	logger.Debug("succeed to add neighbor table for ipv6", zap.Strings("host ipv6 ips", hostIPs))
 	return nil
 }
 
 // NeighborAdd add static neighborhood tales
-func NeighborAdd(logger *zap.Logger, iface, mac string, ipStr string) error {
+func NeighborAdd(logger *zap.Logger, iface, mac string, netIP net.IP) error {
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
 		return fmt.Errorf("failed to get link: %v", err)
 	}
 
-	// add host neighborhood in pod
-	netIP, _, err := net.ParseCIDR(ipStr)
-	if err != nil {
-		logger.Error(err.Error())
-		return err
-	}
 	neigh := &netlink.Neigh{
 		LinkIndex:    link.Attrs().Index,
 		State:        netlink.NUD_PERMANENT,
@@ -807,7 +794,7 @@ func NeighborAdd(logger *zap.Logger, iface, mac string, ipStr string) error {
 
 	if err := netlink.NeighAdd(neigh); err != nil && !os.IsExist(err) {
 		logger.Error("failed to add neigh table", zap.String("interface", iface), zap.String("neigh", neigh.String()), zap.Error(err))
-		return fmt.Errorf("failed to add neigh table: %v ", err)
+		return fmt.Errorf("failed to add neigh table(%+v): %v ", neigh, err)
 	}
 
 	return nil

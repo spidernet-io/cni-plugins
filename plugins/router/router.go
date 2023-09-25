@@ -15,9 +15,9 @@ import (
 	"github.com/spidernet-io/cni-plugins/pkg/networking"
 	ty "github.com/spidernet-io/cni-plugins/pkg/types"
 	"github.com/spidernet-io/cni-plugins/pkg/utils"
+	spiderpool "github.com/spidernet-io/spiderpool/pkg/networking/networking"
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
-	"golang.org/x/sys/unix"
 	"k8s.io/utils/pointer"
 	"net"
 	"os"
@@ -144,34 +144,49 @@ func cmdAdd(args *skel.CmdArgs) error {
 		}
 	}
 
-	enableIpv4 := false
-	enableIpv6 := false
+	enableIpv4, enableIpv6 := false, false
+	ipfamily := -1
 	for _, v := range prevResult.IPs {
 		if v.Address.IP.To4() != nil {
 			enableIpv4 = true
+			ipfamily = netlink.FAMILY_V4
 		} else {
 			enableIpv6 = true
+			ipfamily = netlink.FAMILY_V6
 		}
 	}
 
-	// Pass the prevResult through this plugin to the next one
-	// result := prevResult
-	chainedInterfaceIps, err := utils.GetChainedInterfaceIps(netns, preInterfaceName, enableIpv4, enableIpv6)
+	if enableIpv4 && enableIpv6 {
+		ipfamily = netlink.FAMILY_ALL
+	}
+
+	// get all ip of pod
+	var allPodIp []netlink.Addr
+	err = netns.Do(func(netNS ns.NetNS) error {
+		allPodIp, err = spiderpool.GetAllIPAddress(ipfamily, []string{`^lo$`})
+		if err != nil {
+			logger.Error("failed to GetAllIPAddress in pod", zap.Error(err))
+			return fmt.Errorf("failed to GetAllIPAddress in pod: %v", err)
+		}
+		return nil
+	})
+	if err != nil {
+		logger.Error("failed to all ip of pod", zap.Error(err))
+		return err
+	}
+
+	// get ip addresses of the node
+	hostIPs, err := networking.GetAllHostIPRouteForPod(ipfamily, allPodIp)
+	if err != nil {
+		logger.Error("failed to get IPAddressOnNode", zap.Error(err))
+		return fmt.Errorf("failed to get IPAddressOnNode: %v", err)
+	}
+	logger.Debug("success get host IP for route to Pod", zap.Any("hostIPs", hostIPs))
+
+	chainedInterfaceIps, err := spiderpool.IPAddressByName(netns, args.IfName, ipfamily)
 	if err != nil {
 		logger.Error(err.Error())
-		return err
-	}
-
-	ruleTable := utils.GetRuleNumber(preInterfaceName)
-	if ruleTable < 0 {
-		logger.Error("failed to get the number of rule table for interface", zap.String("interface", preInterfaceName))
-		return fmt.Errorf("failed to get the number of rule table for interface %s", preInterfaceName)
-	}
-
-	// setup neighborhood to fix pod and host communication issue
-	if err = utils.AddStaticNeighTable(logger, netns, conf.Sriov, enableIpv4, enableIpv6, conf.DefaultOverlayInterface, chainedInterfaceIps); err != nil {
-		logger.Error(err.Error())
-		return err
+		return fmt.Errorf("failed to IPAddressByName for pod %s : %v", args.IfName, err)
 	}
 
 	if enableIpv6 {
@@ -181,25 +196,37 @@ func cmdAdd(args *skel.CmdArgs) error {
 		}
 	}
 
+	ruleTable := utils.GetRuleNumber(preInterfaceName)
+	if ruleTable < 0 {
+		logger.Error("failed to get the number of rule table for interface", zap.String("interface", preInterfaceName))
+		return fmt.Errorf("failed to get the number of rule table for interface %s", preInterfaceName)
+	}
+
+	// setup neighborhood to fix pod and host communication issue
+	if err = utils.AddStaticNeighTable(logger, netns, conf.Sriov, conf.DefaultOverlayInterface, hostIPs, chainedInterfaceIps); err != nil {
+		logger.Error(err.Error())
+		return err
+	}
+
 	// ----------------- Add route table in host ns
-	if err = addChainedIPRoute(logger, netns, conf.Sriov, enableIpv4, enableIpv6, *conf.HostRuleTable, conf.DefaultOverlayInterface, chainedInterfaceIps); err != nil {
+	if err = addChainedIPRoute(logger, netns, conf.Sriov, *conf.HostRuleTable, conf.DefaultOverlayInterface, hostIPs, chainedInterfaceIps); err != nil {
 		logger.Error(err.Error())
 		return err
 	}
 
 	// -----------------  Add route table in pod ns
 	// add route in pod: hostIP via DefaultOverlayInterface
-	if err = addHostIPRoute(logger, netns, ruleTable, conf.DefaultOverlayInterface, conf.Sriov, enableIpv4, enableIpv6); err != nil {
+	if err = addHostIPRoute(logger, netns, ruleTable, ipfamily, conf.DefaultOverlayInterface, hostIPs, conf.Sriov, enableIpv4, enableIpv6); err != nil {
 		logger.Error("failed to add host ip route in container", zap.Error(err))
 		return fmt.Errorf("failed to add route: %v", err)
 	}
 
 	// hijack overlay response packet to overlay interface
 	// we move default route into table <ruleTable>.
-	defaultInterfaceIPs, err := utils.GetChainedInterfaceIps(netns, utils.GetDefaultRouteInterface(preInterfaceName), enableIpv4, enableIpv6)
+	defaultInterfaceIPs, err := spiderpool.IPAddressByName(netns, utils.GetDefaultRouteInterface(preInterfaceName), ipfamily)
 	if err != nil {
 		logger.Error(err.Error())
-		return err
+		return fmt.Errorf("failed to IPAddressByName for pod %s : %v", args.IfName, err)
 	}
 
 	// add route in pod: custom subnet via DefaultOverlayInterface:  overlay subnet / clusterip subnet ...custom route
@@ -226,56 +253,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 }
 
 func cmdDel(args *skel.CmdArgs) error {
-	// delete rule table on host
-	var logger *zap.Logger
-
-	conf, err := parseConfig(args.StdinData)
-	if err != nil {
-		return err
-	}
-
-	if err := logging.SetLogOptions(conf.LogOptions); err != nil {
-		return fmt.Errorf("faild to init logger: %v ", err)
-	}
-
-	logger = logging.LoggerFile.Named(binName)
-
-	k8sArgs := ty.K8sArgs{}
-	if err = types.LoadArgs(args.Args, &k8sArgs); nil != err {
-		logger.Error(err.Error())
-		return fmt.Errorf("failed to get pod information, error=%+v \n", err)
-	}
-
-	// register some args into logger
-	logger = logger.With(zap.String("Action", "Del"),
-		zap.String("ContainerID", args.ContainerID),
-		zap.String("PodUID", string(k8sArgs.K8S_POD_UID)),
-		zap.String("PodName", string(k8sArgs.K8S_POD_NAME)),
-		zap.String("PodNamespace", string(k8sArgs.K8S_POD_NAMESPACE)),
-		zap.String("IfName", args.IfName))
-
-	logger.Debug("Start call CmdDel for Router-plugin", zap.Any("Config", *conf))
-	netns, err := ns.GetNS(args.Netns)
-	if err != nil {
-		if _, ok := err.(ns.NSPathNotExistErr); ok {
-			return nil
-		}
-		logger.Error(err.Error())
-		return fmt.Errorf("failed to open netns %q: %v", args.Netns, err)
-	}
-	defer netns.Close()
-
-	chainedInterfaceIps, err := utils.GetChainedInterfaceIps(netns, args.IfName, true, true)
-	if err != nil {
-		logger.Warn("Pod No IPs, Skip call CmdDel", zap.Error(err))
-	}
-	logger.Debug("Get ChainedInterface IPs", zap.String("interface", args.IfName), zap.Strings("IPs", chainedInterfaceIps))
-	if err = utils.RuleDel(logger, *conf.HostRuleTable, chainedInterfaceIps); err != nil {
-		logger.Error(err.Error())
-		return err
-	}
-	logger.Debug("Succeed to call CmdDel for Router-Plugin")
-	return err
+	return nil
 }
 
 func cmdCheck(args *skel.CmdArgs) error {
@@ -345,35 +323,24 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 
 // addHostIPRoute add all routes to the node in pod netns, the nexthop is the ip of the host
 // only add to main!
-func addHostIPRoute(logger *zap.Logger, netns ns.NetNS, ruleTable int, defaultInterface string, iSriov, enableIpv4 bool, enableIpv6 bool) error {
+func addHostIPRoute(logger *zap.Logger, netns ns.NetNS, ruleTable, ipfamily int, defaultInterface string, hostIPs []net.IP, iSriov, enableIpv4 bool, enableIpv6 bool) error {
 	if iSriov {
 		logger.Info("Main-cni is sriov, don't need to set chained route")
 		return nil
 	}
-	var err error
-	hostIPs, err := utils.GetHostIps(logger, enableIpv4, enableIpv6)
-	if err != nil {
-		logger.Error(err.Error())
-		return err
-	}
 
 	logger.Debug("addHostIPRoute add hostIP dev eth0",
-		zap.Strings("Host IPs", hostIPs),
 		zap.Int("RuleTable", ruleTable),
 		zap.Bool("enableIpv4", enableIpv4),
 		zap.Bool("enableIpv6", enableIpv6))
-	err = netns.Do(func(_ ns.NetNS) error {
-		if ruleTable == overlayRouteTable {
-			logger.Debug("addHostIPRoute add hostIP route dev eth0 to table main")
-			if _, _, err = utils.RouteAdd(logger, unix.RT_TABLE_MAIN, defaultInterface, hostIPs, enableIpv4, enableIpv6); err != nil {
+	err := netns.Do(func(_ ns.NetNS) error {
+		for _, hostIP := range hostIPs {
+			if err := spiderpool.AddRoute(logger, ruleTable, ipfamily, netlink.SCOPE_LINK, defaultInterface, spiderpool.ConvertMaxMaskIPNet(hostIP), nil, nil); err != nil {
 				logger.Error(err.Error())
 				return err
 			}
 		}
-		// add route in pod: hostIP via DefaultOverlayInterface
-		if _, _, err = utils.RouteAdd(logger, ruleTable, defaultInterface, hostIPs, enableIpv4, enableIpv6); err != nil {
-			return err
-		}
+		logger.Debug("addHostIPRoute add hostIP route dev eth0 to table main")
 		return nil
 	})
 	return err
@@ -381,15 +348,14 @@ func addHostIPRoute(logger *zap.Logger, netns ns.NetNS, ruleTable int, defaultIn
 
 // addChainedIPRoute to solve macvlan master/slave interface can't communications directly, we add a route fix it.
 // something like: ip r add <macvlan_ip> dev <overlay_veth_device> on host
-func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, iSriov, enableIpv4, enableIpv6 bool, hostRuleTable int, defaultOverlayInterface string, chainedIPs []string) error {
+func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, iSriov bool, hostRuleTable int, defaultOverlayInterface string, hostIPs []net.IP, chainedIPs []netlink.Addr) error {
 	if iSriov {
 		logger.Debug("main-cni is sriov, don't need set chained route")
 		return nil
 	}
 	// 1. get defaultOverlayInterface IP
 	logger.Debug("Add underlay interface route in host ",
-		zap.String("default overlay interface", defaultOverlayInterface),
-		zap.Strings("underlay interface ips", chainedIPs))
+		zap.String("default overlay interface", defaultOverlayInterface))
 	var err error
 	// index of cali* or lxc* on host
 	parentIndex := -1
@@ -419,30 +385,14 @@ func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, iSriov, enableIpv4, e
 	}
 	logger.Debug("found veth device of default-overlay cni on host", zap.String("Parent Device", link.Attrs().Name))
 
-	hostIPs, err := utils.GetHostIps(logger, true, true)
-	if err != nil {
-		logger.Error(err.Error())
-		return fmt.Errorf("failed to get host ips: %v", err)
-	}
 	for _, chainedIP := range chainedIPs {
-		netIP, ipNet, err := net.ParseCIDR(chainedIP)
-		if err != nil {
-			logger.Error(err.Error())
-			return err
-		}
 		for _, hostIP := range hostIPs {
-			ip, _, err := net.ParseCIDR(hostIP)
-			if err != nil {
-				logger.Error(err.Error())
-				return err
-			}
-
-			if ipNet.Contains(ip) {
+			if chainedIP.Contains(hostIP) {
 				dst := &net.IPNet{
-					IP: netIP,
+					IP: chainedIP.IP,
 				}
 				var family int
-				if netIP.To4() != nil {
+				if chainedIP.IP.To4() != nil {
 					family = netlink.FAMILY_V4
 					dst.Mask = net.CIDRMask(32, 32)
 				} else {
@@ -453,7 +403,7 @@ func addChainedIPRoute(logger *zap.Logger, netNS ns.NetNS, iSriov, enableIpv4, e
 				rule := netlink.NewRule()
 				rule.Table = hostRuleTable
 				rule.Family = family
-				rule.Dst = dst
+				rule.Priority = 1000
 				if err = netlink.RuleAdd(rule); err != nil && !os.IsExist(err) {
 					logger.Error("Netlink RuleAdd Failed", zap.String("Rule", rule.String()), zap.Error(err))
 					return fmt.Errorf("failed to add rule table for underlay interface: %v", err)

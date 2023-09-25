@@ -6,6 +6,19 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"runtime"
+	"time"
+
+	"github.com/spidernet-io/cni-plugins/pkg/config"
+	"github.com/spidernet-io/cni-plugins/pkg/constant"
+	"github.com/spidernet-io/cni-plugins/pkg/logging"
+	"github.com/spidernet-io/cni-plugins/pkg/networking"
+	ty "github.com/spidernet-io/cni-plugins/pkg/types"
+	"github.com/spidernet-io/cni-plugins/pkg/utils"
+
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/100"
@@ -13,20 +26,10 @@ import (
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	bv "github.com/containernetworking/plugins/pkg/utils/buildversion"
-	"github.com/spidernet-io/cni-plugins/pkg/config"
-	"github.com/spidernet-io/cni-plugins/pkg/constant"
-	"github.com/spidernet-io/cni-plugins/pkg/logging"
-	"github.com/spidernet-io/cni-plugins/pkg/networking"
-	ty "github.com/spidernet-io/cni-plugins/pkg/types"
-	"github.com/spidernet-io/cni-plugins/pkg/utils"
+	spiderpool "github.com/spidernet-io/spiderpool/pkg/networking/networking"
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
-	"net"
-	"os"
-	"path/filepath"
-	"runtime"
-	"time"
 )
 
 type PluginConf struct {
@@ -138,12 +141,19 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	enableIpv4, enableIpv6 := false, false
+	ipfamily := -1
 	for _, v := range prevResult.IPs {
 		if v.Address.IP.To4() != nil {
 			enableIpv4 = true
+			ipfamily = netlink.FAMILY_V4
 		} else {
 			enableIpv6 = true
+			ipfamily = netlink.FAMILY_V6
 		}
+	}
+
+	if enableIpv4 && enableIpv6 {
+		ipfamily = netlink.FAMILY_ALL
 	}
 
 	if len(prevResult.Interfaces) == 0 {
@@ -183,21 +193,29 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 	logger.Info("Succeeded to set veth interface", zap.Any("interfaces", prevResult.Interfaces), zap.Any("ips", prevResult.IPs), zap.Any("routes", prevResult.Routes))
 
-	// get all ips on the node
-	hostIPs, err := utils.GetHostIps(logger, enableIpv4, enableIpv6)
+	// get all ip of pod
+	var allPodIp []netlink.Addr
+	err = netns.Do(func(netNS ns.NetNS) error {
+		allPodIp, err = spiderpool.GetAllIPAddress(ipfamily, []string{`^lo$`})
+		if err != nil {
+			logger.Error("failed to GetAllIPAddress in pod", zap.Error(err))
+			return fmt.Errorf("failed to GetAllIPAddress in pod: %v", err)
+		}
+		return nil
+	})
 	if err != nil {
-		logger.Error(err.Error())
-		return fmt.Errorf("failed to get host ips: %v", err)
+		logger.Error("failed to all ip of pod", zap.Error(err))
+		return err
 	}
+	logger.Info("Succeed to get ips from given interface inside container", zap.String("interface", chainedInterface), zap.Any("container ips", allPodIp))
 
-	// get ips of this interface(preInterfaceName) from, including ipv4 and ipv6
-	conIPs, err := utils.GetChainedInterfaceIps(netns, chainedInterface, enableIpv4, enableIpv6)
+	// get ip addresses of the node
+	hostIPs, err := networking.GetAllHostIPRouteForPod(ipfamily, allPodIp)
 	if err != nil {
-		logger.Error(err.Error())
-		return fmt.Errorf("failed to find ip from chained interface %s : %v", chainedInterface, err)
+		logger.Error("failed to get IPAddressOnNode", zap.Error(err))
+		return fmt.Errorf("failed to get IPAddressOnNode: %v", err)
 	}
-
-	logger.Info("Succeed to get ips from given interface inside container", zap.String("interface", chainedInterface), zap.Strings("container ips", conIPs))
+	logger.Debug("success get host IP for route to Pod", zap.Any("hostIPs", hostIPs))
 
 	if enableIpv6 {
 		if err := utils.EnableIpv6Sysctl(logger, netns); err != nil {
@@ -205,8 +223,14 @@ func cmdAdd(args *skel.CmdArgs) error {
 		}
 	}
 
+	currentIPs, err := spiderpool.IPAddressByName(netns, args.IfName, ipfamily)
+	if err != nil {
+		logger.Error(err.Error())
+		return fmt.Errorf("failed to IPAddressByName for pod %s : %v", args.IfName, err)
+	}
+
 	// 2. setup neighborhood
-	if err = setupNeighborhood(logger, isfirstInterface, netns, chainedInterface, hostInterface, conInterface, hostIPs, conIPs, args.ContainerID); err != nil {
+	if err = setupNeighborhood(logger, isfirstInterface, netns, chainedInterface, hostInterface, conInterface, hostIPs, currentIPs, args.ContainerID); err != nil {
 		logger.Error(err.Error())
 		return err
 	}
@@ -221,14 +245,14 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	// 3. setup routes
-	if err = setupRoutes(logger, netns, ruleTable, hostInterface, conInterface, hostIPs, conIPs, conf, enableIpv4, enableIpv6); err != nil {
+	if err = setupRoutes(logger, netns, ruleTable, ipfamily, hostInterface, conInterface, hostIPs, currentIPs, conf); err != nil {
 		logger.Error(err.Error())
 		return err
 	}
 
 	//4. migrate default route
 	if !isfirstInterface {
-		if err = utils.MigrateRoute(logger, netns, chainedInterface, chainedInterface, conIPs, *conf.MigrateRoute, ruleTable, enableIpv4, enableIpv6); err != nil {
+		if err = utils.MigrateRoute(logger, netns, chainedInterface, chainedInterface, currentIPs, *conf.MigrateRoute, ruleTable, enableIpv4, enableIpv6); err != nil {
 			logger.Error(err.Error())
 			return err
 		}
@@ -390,7 +414,7 @@ func setupVeth(logger *zap.Logger, netns ns.NetNS, isfirstInterface bool, contai
 
 // setupNeighborhood setup neighborhood tables for pod and host.
 // equivalent to: `ip neigh add ....`
-func setupNeighborhood(logger *zap.Logger, isfirstInterface bool, netns ns.NetNS, chainInterface string, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, containerId string) error {
+func setupNeighborhood(logger *zap.Logger, isfirstInterface bool, netns ns.NetNS, chainInterface string, hostInterface, chainedInterface *current.Interface, hostIPs []net.IP, conIPs []netlink.Addr, containerId string) error {
 	var err error
 	// set neighborhood on host
 	logger.Debug("Add Neighborhood Table In Host Side",
@@ -398,32 +422,43 @@ func setupNeighborhood(logger *zap.Logger, isfirstInterface bool, netns ns.NetNS
 		zap.String("containerInterface Mac", chainedInterface.Mac),
 		zap.Any("container IPs", conIPs))
 
+	hostVethLink, err := netlink.LinkByName(hostInterface.Name)
+	if err != nil {
+		logger.Error(fmt.Sprintf("setupNeighborhood: %v", err))
+		return fmt.Errorf("setupNeighborhood: %v", err)
+	}
+	hostInterface.Mac = hostVethLink.Attrs().HardwareAddr.String()
+
 	for _, conIP := range conIPs {
-		if err = utils.NeighborAdd(logger, hostInterface.Name, chainedInterface.Mac, conIP); err != nil {
+		hw, err := net.ParseMAC(chainedInterface.Mac)
+		if err != nil {
+			return fmt.Errorf("veth's mac is invalid: %v", err)
+		}
+
+		if err = spiderpool.AddStaticNeighborTable(hostVethLink.Attrs().Index, conIP.IP, hw); err != nil {
 			logger.Error(err.Error())
 			return err
 		}
 	}
 	if !isfirstInterface {
-		logger.Debug("Succeed to add neighbor table for interface", zap.String("chainInterface", chainInterface), zap.Strings("Container interface ips", conIPs))
+		logger.Debug("Succeed to add neighbor table for interface", zap.String("chainInterface", chainInterface), zap.Any("Container interface ips", conIPs))
 		return nil
 	}
 
-	// set up host veth Interface neighborhood in pod
-	// bug?: sometimes hostveth's mac not be correct, we get hosVeth's mac via LinkByName directly
-	hostVethLink, err := netlink.LinkByName(hostInterface.Name)
-	if err != nil {
-		logger.Error("failed to find veth peer host side", zap.String("Veth Name(host)", getHostVethName(containerId)), zap.Error(err))
-		return err
-	}
 	err = netns.Do(func(_ ns.NetNS) error {
 		logger.Debug("Add HostpIPs Neighborhood Table In Pod Side",
 			zap.String("defaultConVeth", defaultConVeth),
 			zap.String("hostInterface veth Mac", hostInterface.Mac),
-			zap.String("hostVethLink Mac", hostVethLink.Attrs().HardwareAddr.String()),
-			zap.Strings("Host IPs", hostIPs))
+			zap.String("hostVethLink Mac", hostVethLink.Attrs().HardwareAddr.String()))
+
+		podVethLink, err := netlink.LinkByName(defaultConVeth)
+		if err != nil {
+			logger.Error(fmt.Sprintf("setupNeighborhood: %v", err))
+			return fmt.Errorf("setupNeighborhood: %v", err)
+		}
+
 		for _, hostIP := range hostIPs {
-			if err := utils.NeighborAdd(logger, defaultConVeth, hostVethLink.Attrs().HardwareAddr.String(), hostIP); err != nil {
+			if err = spiderpool.AddStaticNeighborTable(podVethLink.Attrs().Index, hostIP, hostVethLink.Attrs().HardwareAddr); err != nil {
 				logger.Error(err.Error())
 				return err
 			}
@@ -436,11 +471,10 @@ func setupNeighborhood(logger *zap.Logger, isfirstInterface bool, netns ns.NetNS
 
 // setupRoutes setup routes for pod and host
 // equivalent to: `ip route add $route`
-func setupRoutes(logger *zap.Logger, netns ns.NetNS, ruleTable int, hostInterface, chainedInterface *current.Interface, hostIPs, conIPs []string, conf *PluginConf, enableIpv4, enableIpv6 bool) error {
-	var err error
-	viaIPs, err := utils.GetNextHopIPs(logger, conIPs)
+func setupRoutes(logger *zap.Logger, netns ns.NetNS, ruleTable, ipfamily int, hostInterface, chainedInterface *current.Interface, hostIPs []net.IP, conIPs []netlink.Addr, conf *PluginConf) error {
+	v4Gw, v6Gw, err := spiderpool.GetGatewayIP(conIPs)
 	if err != nil {
-		logger.Error(err.Error())
+		logger.Error("failed to GetGatewayIP", zap.Error(err))
 		return err
 	}
 
@@ -448,95 +482,75 @@ func setupRoutes(logger *zap.Logger, netns ns.NetNS, ruleTable int, hostInterfac
 	err = netns.Do(func(_ ns.NetNS) error {
 		// add host ip route
 		// equiva to "ip r add hostIP dev veth0 table <ruleTable> "
-		if _, _, err = utils.RouteAdd(logger, ruleTable, chainedInterface.Name, hostIPs, enableIpv4, enableIpv6); err != nil {
-			logger.Error("[pod side]", zap.Error(err))
-			return fmt.Errorf("[pod side]: %v", err)
-		}
-
-		// setup custom routes from cni conf
-		// such as calico cidr, service cidr
-		// ip route add <route> via hostIP dev veth0
-		link, err := netlink.LinkByName(chainedInterface.Name)
-		if err != nil {
-			logger.Error(err.Error())
-			return err
-		}
-
-		var destHostIpv4, destHostIpv6 net.IP
-		for _, viaIP := range viaIPs {
-			if viaIP.To4() != nil {
-				destHostIpv4 = viaIP
-			} else {
-				destHostIpv6 = viaIP
+		for _, hostAddress := range hostIPs {
+			ipNet := spiderpool.ConvertMaxMaskIPNet(hostAddress)
+			if err = spiderpool.AddRoute(logger, ruleTable, ipfamily, netlink.SCOPE_LINK, defaultConVeth, ipNet, nil, nil); err != nil {
+				logger.Error("failed to AddRoute for ipAddressOnNode", zap.Error(err))
+				return fmt.Errorf("failed to AddRouteTable for ipAddressOnNode: %v", err)
 			}
 		}
 
-		if err = addSubnetRoute(logger, conf.ServiceHijackSubnet, ruleTable, link.Attrs().Index, enableIpv4, enableIpv6, &destHostIpv4, &destHostIpv6); err != nil {
-			return err
-		}
-		logger.Debug("Succeed to add service subnet to pod side", zap.Strings("Service Subnet", conf.ServiceHijackSubnet))
+		allSubnets := append(conf.ServiceHijackSubnet, conf.OverlayHijackSubnet...)
+		allSubnets = append(allSubnets, conf.AdditionalHijackSubnet...)
+		for _, hijack := range allSubnets {
+			nip, ipNet, err := net.ParseCIDR(hijack)
+			if err != nil {
+				logger.Error("Invalid Hijack Cidr", zap.String("Cidr", hijack), zap.Error(err))
+				return err
+			}
 
-		if err = addSubnetRoute(logger, conf.OverlayHijackSubnet, ruleTable, link.Attrs().Index, enableIpv4, enableIpv6, &destHostIpv4, &destHostIpv6); err != nil {
-			return err
-		}
-		logger.Debug("Succeed to add overlay subnet to pod side", zap.Strings("Overlay CNI Subnet", conf.OverlayHijackSubnet))
+			if nip.To4() != nil && v4Gw == nil {
+				logger.Warn("ignore adding hijack routing table(ipv4), due to ipv4 gateway is nil", zap.String("IPv4 Hijack cidr", hijack))
+				continue
+			}
 
-		if err = addSubnetRoute(logger, conf.AdditionalHijackSubnet, ruleTable, link.Attrs().Index, enableIpv4, enableIpv6, &destHostIpv4, &destHostIpv6); err != nil {
-			return err
+			if nip.To4() == nil && v6Gw == nil {
+				logger.Warn("ignore adding hijack routing table(ipv6), due to ipv6 gateway is nil", zap.String("IPv6 Hijack cidr", hijack))
+				continue
+			}
+
+			if err := spiderpool.AddRoute(logger, ruleTable, ipfamily, netlink.SCOPE_UNIVERSE, defaultConVeth, ipNet, v4Gw, v6Gw); err != nil {
+				logger.Error("failed to AddRoute for hijackCIDR", zap.String("Dst", ipNet.String()), zap.Error(err))
+				return fmt.Errorf("failed to AddRoute for hijackCIDR: %v", err)
+			}
+
 		}
+		logger.Debug("AddRouteTable for localCIDRs successfully", zap.Strings("localCIDRs", allSubnets))
 
 		// As for more than two macvlan interface, we need to add something like below shown:
 		// eq: ip rule add to <chainedInterface subnet> lookup table <ruleTable>
+		var ipFamilies []int
+		if ipfamily == netlink.FAMILY_ALL {
+			ipFamilies = append(ipFamilies, netlink.FAMILY_V4, netlink.FAMILY_V6)
+		} else {
+			ipFamilies = append(ipFamilies, ipfamily)
+		}
+
 		if ruleTable != unix.RT_TABLE_MAIN {
-			if err = utils.AddToRuleTable(logger, conIPs, ruleTable, enableIpv4, enableIpv6); err != nil {
-				return err
+			rule := netlink.NewRule()
+			rule.Table = ruleTable
+			for _, ipf := range ipFamilies {
+				rule.Family = ipf
+				if err = netlink.RuleAdd(rule); err != nil && !os.IsExist(err) {
+					logger.Error("failed to Add ToRuleTable for host", zap.String("rule", rule.String()), zap.Error(err))
+					return fmt.Errorf("failed to Add ToRuleTable for host(%+v): %v", rule.String(), err)
+				}
 			}
 		}
 		return nil
 	})
-	// set routes for host
-	// equivalent: ip add  <chainedIPs> dev veth-peer on host
-	if _, _, err = utils.RouteAdd(logger, unix.RT_TABLE_MAIN, hostInterface.Name, conIPs, enableIpv4, enableIpv6); err != nil {
-		logger.Error("[host side]", zap.Error(err))
-		return fmt.Errorf("[host side]: %v", err)
+
+	for idx := range conIPs {
+		ipNet := spiderpool.ConvertMaxMaskIPNet(conIPs[idx].IP)
+
+		// set routes for host
+		// equivalent: ip add  <chainedIPs> dev <hostVethName> table  on host
+		if err = spiderpool.AddRoute(logger, unix.RT_TABLE_MAIN, ipfamily, netlink.SCOPE_LINK, hostInterface.Name, ipNet, nil, nil); err != nil {
+			logger.Error("failed to AddRouteTable for preInterface IPAddress", zap.Error(err))
+			return fmt.Errorf("failed to AddRouteTable for preInterface %s's IPAddress: %v", hostInterface.Name, err)
+		}
+		logger.Info("add route for to pod in host", zap.String("Dst", ipNet.String()))
 	}
 
 	return err
-}
-
-func addSubnetRoute(logger *zap.Logger, routes []string, ruleTable, linkIndex int, enableIpv4, enableIpv6 bool, destHostIpv4, destHostIpv6 *net.IP) error {
-	for _, route := range routes {
-		_, ipNet, err := net.ParseCIDR(route)
-		if err != nil {
-			logger.Error(err.Error())
-			return err
-		}
-
-		gw := net.IP{}
-		if ipNet.IP.To4() != nil {
-			if enableIpv4 && destHostIpv4 != nil {
-				gw = *destHostIpv4
-			}
-		} else {
-			if enableIpv6 && destHostIpv6 != nil {
-				gw = *destHostIpv6
-			}
-		}
-		if len(gw) == 0 {
-			logger.Warn("the route given does not match the ip family of the pod, ignore the creation of this route", zap.String("route", ipNet.String()))
-			continue
-		}
-		logger.Debug("Netlink RouteAdd", zap.Int("LinkIndex", linkIndex), zap.Int("ruleTable", ruleTable), zap.String("Dst", ipNet.String()), zap.String("Gw", gw.String()))
-
-		if err = netlink.RouteAdd(&netlink.Route{
-			LinkIndex: linkIndex,
-			Dst:       ipNet,
-			Gw:        gw,
-			Table:     ruleTable,
-		}); err != nil && err.Error() != constant.ErrRouteFileExist {
-			logger.Error("[pod side]failed to add route", zap.String("dst", ipNet.String()), zap.String("gw", gw.String()), zap.Error(err))
-			return fmt.Errorf("[pod side] failed to add route: %v: %v ", ipNet.String(), err)
-		}
-	}
-	return nil
 }

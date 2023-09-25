@@ -16,5 +16,6 @@
 // +kubebuilder:rbac:groups="apps",resources=statefulsets;deployments;replicasets;daemonsets,verbs=get;list;update;watch
 // +kubebuilder:rbac:groups="batch",resources=jobs;cronjobs,verbs=get;list;update;watch
 // +kubebuilder:rbac:groups="",resources=nodes;namespaces;endpoints;pods;services,verbs=get;list;watch;update
+// +kubebuilder:rbac:groups="networking.k8s.io",resources=ingresses,verbs=get;list;watch
 
 package v1

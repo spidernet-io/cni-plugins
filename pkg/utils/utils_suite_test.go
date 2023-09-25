@@ -30,22 +30,14 @@ var logger *zap.Logger
 var ipnets [2]*net.IPNet
 var serviceSubnet, overlaySubnet = []string{"10.96.0.0/16", "fd00:10:96::/112"}, []string{"10.244.0.0/16", "fd00:10:244::/56"}
 var defaultInterfaceIPs = []string{"10.96.0.12/24"}
+var defaultInterfaceAddrs []netlink.Addr
 
 // change me, default value is eth0 on github runner
 var defaultInterface = "eth0"
-var conVethName, hostVethName, v4IP, v6IP, logPath string
+var conVethName, hostVethName, v4IPStr, v6IPStr, logPath string
+var v4IP, v6IP net.IP
+var hostIPs []net.IP
 var err error
-
-func generateIPNet(ipv4, ipv6 string) (ipnets [2]*net.IPNet) {
-
-	_, ipnets[0], err = net.ParseCIDR(ipv4)
-	Expect(err).NotTo(HaveOccurred())
-
-	_, ipnets[1], err = net.ParseCIDR(ipv6)
-	Expect(err).NotTo(HaveOccurred())
-
-	return
-}
 
 func generateRandomName() string {
 	return fmt.Sprintf("veth%s", tools.RandomName()[8:])
@@ -101,15 +93,24 @@ var _ = BeforeSuite(func() {
 
 	conVethName = generateRandomName()
 	hostVethName = generateRandomName()
-	v4IP = "10.6.212.100/16"
-	v6IP = "fd00:10:6:212::100/64"
+	v4IPStr = "10.6.212.100/16"
+	v6IPStr = "fd00:10:6:212::100/64"
 	logPath = "/tmp/meta-plugins/tmp.log"
-	ipnets = generateIPNet(v4IP, v6IP)
+	v4IP, ipnets[0], _ = net.ParseCIDR(v4IPStr)
+	v6IP, ipnets[1], _ = net.ParseCIDR(v6IPStr)
+	hostIPs = append(hostIPs, v4IP)
 
 	if logging.LoggerFile == nil {
 		logOptions := logging.InitLogOptions(&types.LogOptions{LogFilePath: logPath})
 		err := logging.SetLogOptions(logOptions)
 		Expect(err).NotTo(HaveOccurred())
+	}
+
+	_, netIPs, _ := net.ParseCIDR("10.96.0.12/24")
+	defaultInterfaceAddrs = []netlink.Addr{
+		{
+			IPNet: netIPs,
+		},
 	}
 	logger = logging.LoggerFile.Named("unit-test")
 

@@ -33,7 +33,8 @@ var containerID = "testtesttesttest"
 var defaultInterface = "eth0"
 var hostVethName, secondifName, overlayifName, v4IP, v6IP, v4IP2, v6IP2 string
 var err error
-var defaultInterfaceIPs = []string{"10.96.0.12/24"}
+var hostIPs []net.IP
+var defaultInterfaceIPs []netlink.Addr
 
 func generateIPNet(ipv4, ipv6 string) (ipnets [2]*net.IPNet) {
 
@@ -64,6 +65,19 @@ var _ = BeforeSuite(func() {
 	v6IP2 = "fd00:172:17:2::100/64"
 	ipnets := generateIPNet(v4IP, v6IP)
 	ipnets2 := generateIPNet(v4IP2, v6IP2)
+
+	hostIPs = append(hostIPs, net.ParseIP("172.17.2.100"))
+	hostIPs = append(hostIPs, net.ParseIP("fd00:172:17:2::100"))
+
+	defaultInterfaceIPs = []netlink.Addr{
+		{
+			IPNet: &net.IPNet{
+				IP:   net.ParseIP("10.6.212.204"),
+				Mask: net.CIDRMask(24, 32),
+			},
+		},
+	}
+
 	secondifName = "net1"
 	overlayifName = "eth0"
 	hostVethName = generateRandomName()
