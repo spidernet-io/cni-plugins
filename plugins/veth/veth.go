@@ -516,27 +516,6 @@ func setupRoutes(logger *zap.Logger, netns ns.NetNS, ruleTable, ipfamily int, ho
 
 		}
 		logger.Debug("AddRouteTable for localCIDRs successfully", zap.Strings("localCIDRs", allSubnets))
-
-		// As for more than two macvlan interface, we need to add something like below shown:
-		// eq: ip rule add to <chainedInterface subnet> lookup table <ruleTable>
-		var ipFamilies []int
-		if ipfamily == netlink.FAMILY_ALL {
-			ipFamilies = append(ipFamilies, netlink.FAMILY_V4, netlink.FAMILY_V6)
-		} else {
-			ipFamilies = append(ipFamilies, ipfamily)
-		}
-
-		if ruleTable != unix.RT_TABLE_MAIN {
-			rule := netlink.NewRule()
-			rule.Table = ruleTable
-			for _, ipf := range ipFamilies {
-				rule.Family = ipf
-				if err = netlink.RuleAdd(rule); err != nil && !os.IsExist(err) {
-					logger.Error("failed to Add ToRuleTable for host", zap.String("rule", rule.String()), zap.Error(err))
-					return fmt.Errorf("failed to Add ToRuleTable for host(%+v): %v", rule.String(), err)
-				}
-			}
-		}
 		return nil
 	})
 
