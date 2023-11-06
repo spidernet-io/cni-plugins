@@ -18,6 +18,7 @@ import (
 	spiderpool "github.com/spidernet-io/spiderpool/pkg/networking/networking"
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
+	"golang.org/x/sys/unix"
 	"k8s.io/utils/pointer"
 	"net"
 	"os"
@@ -334,12 +335,16 @@ func addHostIPRoute(logger *zap.Logger, netns ns.NetNS, ruleTable, ipfamily int,
 		zap.Bool("enableIpv4", enableIpv4),
 		zap.Bool("enableIpv6", enableIpv6))
 	err := netns.Do(func(_ ns.NetNS) error {
+		if ruleTable == 100 {
+			ruleTable = unix.RT_TABLE_MAIN
+		}
 		for _, hostIP := range hostIPs {
 			if err := spiderpool.AddRoute(logger, ruleTable, ipfamily, netlink.SCOPE_LINK, defaultInterface, spiderpool.ConvertMaxMaskIPNet(hostIP), nil, nil); err != nil {
 				logger.Error(err.Error())
 				return err
 			}
 		}
+
 		logger.Debug("addHostIPRoute add hostIP route dev eth0 to table main")
 		return nil
 	})
