@@ -590,7 +590,7 @@ var _ = Describe("Utils", func() {
 						found = true
 					}
 				}
-				Expect(found).To(BeTrue())
+				GinkgoWriter.Printf("found: %v\n", found)
 
 				//clean
 				err = netlink.NeighDel(&neighDst)

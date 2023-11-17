@@ -554,7 +554,7 @@ func moveRouteTable(logger *zap.Logger, iface string, ruleTable, ipfamily int) e
 		logger.Debug("Found Route", zap.String("Route", route.String()))
 
 		if route.LinkIndex == link.Attrs().Index {
-			if route.Dst == nil {
+			if route.Dst == nil || route.Dst.IP.Equal(net.IPv4zero) {
 				if err = netlink.RouteDel(&route); err != nil {
 					logger.Error("failed to delete default route  in main table ", zap.String("route", route.String()), zap.Error(err))
 					return fmt.Errorf("failed to delete default route (%+v) in main table: %+v", route, err)

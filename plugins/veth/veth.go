@@ -19,6 +19,7 @@ import (
 	ty "github.com/spidernet-io/cni-plugins/pkg/types"
 	"github.com/spidernet-io/cni-plugins/pkg/utils"
 
+	"github.com/cilium/cilium/pkg/mac"
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/100"
@@ -377,6 +378,7 @@ func parseConfig(stdin []byte) (*PluginConf, error) {
 func setupVeth(logger *zap.Logger, netns ns.NetNS, isfirstInterface bool, containerID string, pr *current.Result) (*current.Interface, *current.Interface, error) {
 	hostInterface := &current.Interface{Name: getHostVethName(containerID)}
 	containerInterface := &current.Interface{}
+
 	err := netns.Do(func(hostNS ns.NetNS) error {
 		if !isfirstInterface {
 			link, err := netlink.LinkByName(defaultConVeth)
@@ -388,12 +390,26 @@ func setupVeth(logger *zap.Logger, netns ns.NetNS, isfirstInterface bool, contai
 			logger.Info("Veth-peer has already setup, skip setupVeth ")
 			return nil
 		}
-		hostVeth, contVeth0, err := ip.SetupVethWithName(defaultConVeth, hostInterface.Name, defaultMtu, "", hostNS)
+
+		// systemd 242+ tries to set a "persistent" MAC addr for any virtual device
+		// by default (controlled by MACAddressPolicy). As setting happens
+		// asynchronously after a device has been created, ep.Mac and ep.HostMac
+		// can become stale which has a serious consequence - the kernel will drop
+		// any packet sent to/from the endpoint. However, we can trick systemd by
+		// explicitly setting MAC addrs for both veth ends. This sets
+		// addr_assign_type for NET_ADDR_SET which prevents systemd from changing
+		// the addrs.
+		podVethMac, err := mac.GenerateRandMAC()
+		if err != nil {
+			return fmt.Errorf("unable to generate podVeth mac addr: %s", err)
+		}
+
+		hostVeth, contVeth0, err := ip.SetupVethWithName(defaultConVeth, hostInterface.Name, defaultMtu, podVethMac.String(), hostNS)
 		if err != nil {
 			return fmt.Errorf("[veth] failed to set veth peer: %v", err)
 		}
+
 		hostInterface.Name = hostVeth.Name
-		hostInterface.Mac = hostVeth.HardwareAddr.String()
 		containerInterface.Name = contVeth0.Name
 		containerInterface.Mac = contVeth0.HardwareAddr.String()
 		containerInterface.Sandbox = netns.Path()
@@ -409,6 +425,24 @@ func setupVeth(logger *zap.Logger, netns ns.NetNS, isfirstInterface bool, contai
 		return nil, nil, err
 	}
 
+	if isfirstInterface {
+		hostVethMac, err := mac.GenerateRandMAC()
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to generate hostVeth mac addr: %s", err)
+		}
+
+		hostVethLink, err := netlink.LinkByName(hostInterface.Name)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if err = netlink.LinkSetHardwareAddr(hostVethLink, net.HardwareAddr(hostVethMac)); err != nil {
+			return nil, nil, fmt.Errorf("failed to set host veth mac: %v", err)
+		}
+		hostInterface.Mac = hostVethMac.String()
+		logger.Debug("Successfully to set veth mac", zap.String("podVethMac", containerInterface.Mac), zap.String("hostVethMac", hostInterface.Mac))
+	}
+
 	return hostInterface, containerInterface, nil
 }
 
@@ -416,18 +450,38 @@ func setupVeth(logger *zap.Logger, netns ns.NetNS, isfirstInterface bool, contai
 // equivalent to: `ip neigh add ....`
 func setupNeighborhood(logger *zap.Logger, isfirstInterface bool, netns ns.NetNS, chainInterface string, hostInterface, chainedInterface *current.Interface, hostIPs []net.IP, conIPs []netlink.Addr, containerId string) error {
 	var err error
-	// set neighborhood on host
-	logger.Debug("Add Neighborhood Table In Host Side",
-		zap.String("hostInterface name", hostInterface.Name),
-		zap.String("containerInterface Mac", chainedInterface.Mac),
-		zap.Any("container IPs", conIPs))
-
 	hostVethLink, err := netlink.LinkByName(hostInterface.Name)
 	if err != nil {
 		logger.Error(fmt.Sprintf("setupNeighborhood: %v", err))
 		return fmt.Errorf("setupNeighborhood: %v", err)
 	}
 	hostInterface.Mac = hostVethLink.Attrs().HardwareAddr.String()
+
+	// set neighborhood on host
+	logger.Debug("Add Neighborhood Table In Host Side",
+		zap.String("hostInterface name", hostInterface.Name),
+		zap.String("containerInterface Mac", chainedInterface.Mac),
+		zap.String("hostInterface Mac", hostInterface.Mac))
+
+	// do any cleans?
+	nList, err := netlink.NeighList(0, netlink.FAMILY_ALL)
+	if err != nil {
+		logger.Warn("failed to get NeighList, ignore clean dirty neigh table")
+	}
+
+	for idx := range nList {
+		for _, ipAddr := range conIPs {
+			if nList[idx].IP.Equal(ipAddr.IP) {
+				if err = netlink.NeighDel(&nList[idx]); err != nil && !os.IsNotExist(err) {
+					logger.Warn("failed to clean dirty neigh table, it may cause the pod can't communicate with the node, please clean it up manually",
+						zap.String("dirty neigh table", nList[idx].String()))
+				} else {
+					logger.Debug("successfully cleaned up the dirty neigh table", zap.String("dirty neigh table", nList[idx].String()))
+				}
+				break
+			}
+		}
+	}
 
 	for _, conIP := range conIPs {
 		hw, err := net.ParseMAC(chainedInterface.Mac)
@@ -440,22 +494,23 @@ func setupNeighborhood(logger *zap.Logger, isfirstInterface bool, netns ns.NetNS
 			return err
 		}
 	}
+
 	if !isfirstInterface {
 		logger.Debug("Succeed to add neighbor table for interface", zap.String("chainInterface", chainInterface), zap.Any("Container interface ips", conIPs))
 		return nil
 	}
 
 	err = netns.Do(func(_ ns.NetNS) error {
-		logger.Debug("Add HostpIPs Neighborhood Table In Pod Side",
-			zap.String("defaultConVeth", defaultConVeth),
-			zap.String("hostInterface veth Mac", hostInterface.Mac),
-			zap.String("hostVethLink Mac", hostVethLink.Attrs().HardwareAddr.String()))
-
 		podVethLink, err := netlink.LinkByName(defaultConVeth)
 		if err != nil {
 			logger.Error(fmt.Sprintf("setupNeighborhood: %v", err))
 			return fmt.Errorf("setupNeighborhood: %v", err)
 		}
+
+		logger.Debug("Add HostpIPs Neighborhood Table In Pod Side",
+			zap.String("defaultConVeth", defaultConVeth),
+			zap.String("hostInterface veth Mac", hostInterface.Mac),
+			zap.String("podInterface Mac", podVethLink.Attrs().HardwareAddr.String()))
 
 		for _, hostIP := range hostIPs {
 			if err = spiderpool.AddStaticNeighborTable(podVethLink.Attrs().Index, hostIP, hostVethLink.Attrs().HardwareAddr); err != nil {
